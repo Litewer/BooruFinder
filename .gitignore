@@ -1,0 +1,15 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.log
+
+build/
+
+android_app/.gradle/
+android_app/.idea/
+android_app/local.properties
+android_app/app/build/
+android_app/.kotlin/
+android_app/app/src/main/python/static/static/
+dist/BooruFinder_neo2005.exe

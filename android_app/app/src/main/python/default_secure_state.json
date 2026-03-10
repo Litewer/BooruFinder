@@ -1,0 +1,15 @@
+{
+  "credentials": {
+    "rule34": {
+      "user_id": "",
+      "api_key": ""
+    },
+    "gelbooru": {
+      "user_id": "",
+      "api_key": ""
+    }
+  },
+  "network": {
+    "proxy_url": ""
+  }
+}

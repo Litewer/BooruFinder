@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Booru Finder</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600&family=VT323&family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/app.css">
+</head>
+<body data-theme="old_neko">
+  <div class="shader shader-1"></div>
+  <div class="shader shader-2"></div>
+  <div class="shader shader-3"></div>
+  <div class="noise-mask"></div>
+  <div class="scanline-mask"></div>
+
+  <main class="layout">
+    <section class="panel glass">
+      <div class="panel-head">
+        <p class="panel-kicker">cat://pink-shell online</p>
+        <p class="catline">/\_/\  ( o.o )  > cyber neko</p>
+      </div>
+      <h1>Booru Finder</h1>
+      <p class="sub">Теги, несколько источников, сортировка по популярности и встроенный медиаплеер.</p>
+
+      <label class="field">
+        <span>Теги</span>
+        <input id="tagsInput" type="text" placeholder="пример: 2girls blue_hair solo">
+        <div id="tagHints" class="tag-hints hidden"></div>
+      </label>
+
+      <label class="field">
+        <span>Черный список тегов</span>
+        <input id="blacklistInput" type="text" placeholder="через пробел, пример: gore scat">
+      </label>
+
+      <div class="split">
+        <label class="field">
+          <span>Сортировка</span>
+          <select id="sortSelect">
+            <option value="new">Новые</option>
+            <option value="popular">Популярные</option>
+          </select>
+        </label>
+
+        <label class="field">
+          <span>Лимит/источник</span>
+          <select id="limitSelect">
+            <option value="20">20</option>
+            <option value="30" selected>30</option>
+            <option value="50">50</option>
+            <option value="75">75</option>
+          </select>
+        </label>
+      </div>
+
+      <label class="field">
+        <span>Score фильтр</span>
+        <select id="minScoreSelect">
+          <option value="0" selected>Любой score</option>
+          <option value="50">50+</option>
+          <option value="100">100+</option>
+          <option value="250">250+</option>
+          <option value="500">500+</option>
+          <option value="1000">1000+</option>
+        </select>
+      </label>
+
+      <div class="field">
+        <span>Источники</span>
+        <select id="sourceSelect"></select>
+      </div>
+
+      <details class="creds">
+        <summary>API ключи источников</summary>
+        <p id="securityStatus" class="security-note">Security: loading...</p>
+        <label class="field">
+          <span>Rule34 user_id</span>
+          <input id="rule34UserId" type="text" placeholder="user_id">
+        </label>
+        <label class="field">
+          <span>Rule34 api_key</span>
+          <input id="rule34ApiKey" type="password" placeholder="api_key">
+        </label>
+        <label class="field">
+          <span>Gelbooru user_id</span>
+          <input id="gelbooruUserId" type="text" placeholder="user_id">
+        </label>
+        <label class="field">
+          <span>Gelbooru api_key</span>
+          <input id="gelbooruApiKey" type="password" placeholder="api_key">
+        </label>
+        <label class="field">
+          <span>Proxy URL (optional, privacy route)</span>
+          <input id="proxyUrl" type="text" placeholder="http://127.0.0.1:8080">
+        </label>
+        <button id="clearSecureBtn" class="btn ghost" type="button">Очистить secure-хранилище</button>
+      </details>
+
+      <label class="adult-check">
+        <input id="adultCheckbox" type="checkbox">
+        <span>Мне есть 18 лет</span>
+      </label>
+
+      <div class="buttons">
+        <button id="searchBtn" class="btn primary">Поиск</button>
+        <button id="loadMoreBtn" class="btn ghost">Загрузить еще</button>
+      </div>
+      <button id="favoritesBtn" class="btn ghost wide-btn" type="button">Favorites (0)</button>
+      <button id="openDownloadsBtn" class="btn ghost wide-btn" type="button">Папка загрузок</button>
+
+      <div class="theme-dock">
+        <label class="field">
+          <span>Тема дизайна</span>
+          <select id="themeSelect">
+            <option value="old_neko" selected>Old Neko</option>
+            <option value="retro_blue">Neo 2005 CRT</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section class="content glass">
+      <header class="content-head">
+        <strong id="resultCount">0 результатов</strong>
+        <span id="statusText">Ожидание запроса</span>
+      </header>
+      <div id="errorBox" class="error-box hidden"></div>
+      <div id="grid" class="grid"></div>
+      <div id="paginationBar" class="pagination"></div>
+      <div id="scrollSentinel" class="scroll-sentinel"></div>
+    </section>
+  </main>
+
+  <dialog id="viewer" class="viewer">
+    <div class="viewer-top">
+      <button id="downloadCurrentBtn" class="btn primary">Скачать</button>
+      <button id="likeCurrentBtn" class="btn ghost" type="button">Like Video</button>
+      <button id="prevBtn" class="btn ghost">Назад</button>
+      <button id="nextBtn" class="btn ghost">Вперед</button>
+      <button id="closeBtn" class="btn danger">Закрыть</button>
+    </div>
+    <div id="mediaHolder" class="media-holder"></div>
+    <div id="metaBox" class="meta-box"></div>
+  </dialog>
+
+  <script src="/app.js"></script>
+</body>
+</html>
