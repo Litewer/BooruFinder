@@ -10,7 +10,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Lock
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, urlencode, urljoin, urlparse
 from urllib.error import HTTPError
 from urllib.request import ProxyHandler, Request, build_opener, urlopen
 import xml.etree.ElementTree as ET
@@ -264,6 +264,30 @@ def normalize_url(url_value: str) -> str:
     return url_value
 
 
+def absolutize_source_url(source_id: str, url_value: str, attrs: dict) -> str:
+    normalized = normalize_url(url_value)
+    if not normalized:
+        return ""
+    if normalized.startswith(("http://", "https://")):
+        return normalized
+
+    base_site_url = f"https://{urlparse(SOURCE_CONFIG[source_id]['post_url']).hostname}/"
+    if normalized.startswith("/"):
+        return urljoin(base_site_url, normalized)
+
+    if source_id == "gelbooru":
+        directory = str(attrs.get("directory", "")).strip().strip("/")
+        if directory and "/" not in normalized:
+            return f"https://img2.gelbooru.com/images/{directory}/{normalized}"
+
+    return urljoin(base_site_url, normalized)
+
+
+def normalize_tag_query(raw_tags: str) -> str:
+    compact = str(raw_tags or "").replace(",", " ")
+    return " ".join(part for part in compact.split() if part)
+
+
 def media_type_from_url(url_value: str) -> str:
     if not url_value:
         return "image"
@@ -288,19 +312,25 @@ def xml_node_to_dict(node: ET.Element) -> dict:
 
 def normalize_post(source_id: str, attrs: dict) -> dict:
     post_id = str(attrs.get("id", "")).strip()
-    file_url = normalize_url(
+    file_url = absolutize_source_url(
+        source_id,
         attrs.get("file_url")
         or attrs.get("image")
         or attrs.get("sample_url")
         or attrs.get("jpeg_url")
-        or ""
+        or "",
+        attrs,
     )
-    if source_id == "gelbooru" and file_url and not file_url.startswith(("http://", "https://")):
-        directory = str(attrs.get("directory", "")).strip().strip("/")
-        if directory:
-            file_url = f"https://img2.gelbooru.com/images/{directory}/{file_url}"
-    preview_url = normalize_url(attrs.get("preview_url") or attrs.get("sample_url") or file_url)
-    sample_url = normalize_url(attrs.get("sample_url") or file_url)
+    sample_url = absolutize_source_url(
+        source_id,
+        attrs.get("sample_url") or attrs.get("jpeg_url") or attrs.get("image") or file_url,
+        attrs,
+    )
+    preview_url = absolutize_source_url(
+        source_id,
+        attrs.get("preview_url") or attrs.get("sample_url") or attrs.get("jpeg_url") or file_url,
+        attrs,
+    )
     post_url = SOURCE_CONFIG[source_id]["post_url"].format(id=post_id) if post_id else ""
 
     if not post_id or not file_url:
@@ -451,6 +481,7 @@ def fetch_source_posts(
 ):
     credentials = credentials or {}
     network_config = network_config or {}
+    tags = normalize_tag_query(tags)
     cred_fingerprint = _cache_hash([credentials.get("user_id", ""), credentials.get("api_key", "")])
     net_fingerprint = _cache_hash([network_config.get("proxy_url", "")])
     cache_key = _cache_hash([source_id, tags.strip(), page, limit, sort_mode, cred_fingerprint, net_fingerprint])
@@ -563,27 +594,78 @@ def fetch_source_tags(
     except Exception:  # noqa: BLE001
         pass
 
-    # Related tags from real posts in this source (better relevance than name_pattern)
-    posts = fetch_source_posts(
-        source_id,
-        pattern,
-        0,
-        max(30, min(limit * 8, 80)),
-        "popular",
-        credentials,
-        network_config,
-        timeout,
-    )
-    for post in posts:
-        for tag in str(post.get("tags", "")).split():
-            tag_clean = tag.strip()
-            if not tag_clean:
-                continue
-            if lowered not in tag_clean.lower():
-                continue
-            merged[tag_clean] = merged.get(tag_clean, 0) + 1
+    pattern_limit = max(20, min(limit * 6, 60))
+    for pattern_variant in (f"{pattern}%", f"%{pattern}%"):
+        pattern_params = {
+            "page": "dapi",
+            "s": "tag",
+            "q": "index",
+            "name_pattern": pattern_variant,
+            "limit": str(pattern_limit),
+        }
+        if credentials.get("user_id") and credentials.get("api_key"):
+            pattern_params["user_id"] = credentials["user_id"]
+            pattern_params["api_key"] = credentials["api_key"]
 
-    ordered_names = sorted(merged.items(), key=lambda x: (-to_int(x[1]), x[0]))[:limit]
+        pattern_url = f"{SOURCE_CONFIG[source_id]['base_url']}?{urlencode(pattern_params)}"
+        strict_https(pattern_url)
+        pattern_request = Request(
+            pattern_url,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) BooruFinder/1.0",
+                "Accept": "*/*",
+                "DNT": "1",
+                "Cache-Control": "no-store",
+            },
+        )
+        try:
+            with open_http(pattern_request, network_config, timeout=timeout) as response:
+                pattern_payload = response.read()
+            pattern_root = ET.fromstring(pattern_payload)
+            if pattern_root.tag.lower() == "error":
+                continue
+            for tag_el in pattern_root.findall("tag"):
+                tag_data = xml_node_to_dict(tag_el)
+                name = str(tag_data.get("name", "")).strip()
+                if not name:
+                    continue
+                if lowered not in name.lower():
+                    continue
+                merged[name] = max(merged.get(name, 0), to_int(tag_data.get("count"), 0))
+        except Exception:  # noqa: BLE001
+            continue
+
+    if not merged:
+        posts = fetch_source_posts(
+            source_id,
+            pattern,
+            0,
+            max(20, min(limit * 4, 40)),
+            "popular",
+            credentials,
+            network_config,
+            timeout,
+        )
+        for post in posts:
+            for tag in str(post.get("tags", "")).split():
+                tag_clean = tag.strip()
+                if not tag_clean:
+                    continue
+                if lowered not in tag_clean.lower():
+                    continue
+                merged[tag_clean] = merged.get(tag_clean, 0) + 1
+
+    def tag_rank(name: str):
+        lowered_name = name.lower()
+        if lowered_name == lowered:
+            return (0, len(name))
+        if lowered_name.startswith(lowered):
+            return (1, len(name))
+        if any(marker in lowered_name for marker in (f"_{lowered}", f"-{lowered}")):
+            return (2, len(name))
+        return (3, len(name))
+
+    ordered_names = sorted(merged.items(), key=lambda x: (tag_rank(x[0]), -to_int(x[1]), x[0]))[:limit]
     result = [
         {
             "name": name,
@@ -798,7 +880,7 @@ class AppHandler(SimpleHTTPRequestHandler):
         network_config = parse_network_config(query, secure_state, self.headers)
         credentials = parse_credentials(query, secure_state, self.headers)
 
-        tags = (query.get("tags", [""])[0] or "").strip()
+        tags = normalize_tag_query(query.get("tags", [""])[0] or "")
         page = max(0, to_int(query.get("page", ["0"])[0], 0))
         limit = max(1, min(100, to_int(query.get("limit", ["30"])[0], 30)))
         min_score = max(0, to_int(query.get("min_score", ["0"])[0], 0))
@@ -898,9 +980,26 @@ class AppHandler(SimpleHTTPRequestHandler):
                 except Exception as exc:  # noqa: BLE001
                     errors.append({"source": source_id, "message": str(exc)})
 
+        lowered = term.lower()
+
+        def suggestion_rank(item: dict):
+            lowered_name = str(item.get("name", "")).lower()
+            if lowered_name == lowered:
+                return (0, len(lowered_name))
+            if lowered_name.startswith(lowered):
+                return (1, len(lowered_name))
+            if any(marker in lowered_name for marker in (f"_{lowered}", f"-{lowered}")):
+                return (2, len(lowered_name))
+            return (3, len(lowered_name))
+
         ordered = sorted(
             suggestions,
-            key=lambda t: (t.get("source_name", ""), -to_int(t.get("count")), t.get("name", "")),
+            key=lambda t: (
+                suggestion_rank(t),
+                -to_int(t.get("count")),
+                t.get("source_name", ""),
+                t.get("name", ""),
+            ),
         )
         self.send_json(
             200,

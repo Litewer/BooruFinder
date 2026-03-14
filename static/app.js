@@ -114,11 +114,19 @@ function pickFirstImageUrl(...urls) {
   return "";
 }
 
+function normalizeTagQuery(value) {
+  return String(value || "")
+    .replace(/[\r\n\t,]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function pickCardThumb(item) {
   const preview = item.preview_url || "";
   const sample = item.sample_url || "";
   const file = item.file_url || "";
-  const poster = pickFirstImageUrl(preview, sample, file);
+  const fullImage = pickFirstImageUrl(file, sample, preview);
+  const poster = pickFirstImageUrl(sample, preview, file);
 
   if (item.media_type === "video") {
     if (state.performanceMode) {
@@ -126,16 +134,13 @@ function pickCardThumb(item) {
       return { kind: "placeholder" };
     }
     // Prefer image poster when available; otherwise render a muted video clip.
-    if (preview && !isVideoUrl(preview)) return { kind: "image", src: preview };
     if (sample && !isVideoUrl(sample)) return { kind: "image", src: sample };
+    if (preview && !isVideoUrl(preview)) return { kind: "image", src: preview };
     if (sample || file) return { kind: "video", src: sample || file, poster: poster || "" };
     return { kind: "placeholder" };
   }
 
-  if (state.performanceMode) {
-    return { kind: "image", src: pickFirstImageUrl(preview, sample, file) || sample || file || preview };
-  }
-  return { kind: "image", src: sample || file || preview };
+  return { kind: "image", src: fullImage || sample || preview || file };
 }
 
 function proxyMediaUrl(url) {
@@ -528,7 +533,7 @@ function renderGrid() {
         thumb.kind === "video"
           ? `<video class="thumb" src="${escapeHtml(proxyMediaUrl(thumb.src))}" data-direct-src="${escapeHtml(thumb.src)}" poster="${escapeHtml(proxyMediaUrl(thumb.poster || "") || "")}" muted loop autoplay playsinline preload="metadata"></video>`
           : thumb.kind === "image"
-            ? `<img class="thumb" src="${escapeHtml(proxyMediaUrl(thumb.src))}" data-direct-src="${escapeHtml(thumb.src)}" alt="" loading="lazy">`
+            ? `<img class="thumb" src="${escapeHtml(proxyMediaUrl(thumb.src))}" data-direct-src="${escapeHtml(thumb.src)}" alt="" loading="lazy" decoding="async" fetchpriority="low">`
             : `<div class="thumb thumb-placeholder">video</div>`;
       return `
         <article class="card" data-index="${index}" style="--stagger:${index}; --lamp-seed:${index % 7}">
@@ -703,8 +708,9 @@ function resetPages() {
 }
 
 function buildSearchParams(page) {
+  const tags = normalizeTagQuery(dom.tagsInput.value);
   const params = new URLSearchParams({
-    tags: dom.tagsInput.value.trim(),
+    tags,
     page: String(page),
     limit: dom.limitSelect.value,
     min_score: dom.minScoreSelect.value,
@@ -803,6 +809,11 @@ async function loadPage(page, switchToPage = true) {
 }
 
 async function startSearch() {
+  const normalizedTags = normalizeTagQuery(dom.tagsInput.value);
+  if (dom.tagsInput.value !== normalizedTags) {
+    dom.tagsInput.value = normalizedTags;
+    savePreferences();
+  }
   await saveSecureConfig();
   state.viewMode = "search";
   state.sessionId += 1;
@@ -837,10 +848,13 @@ function activeTokenInfo() {
   const value = dom.tagsInput.value;
   const caret = dom.tagsInput.selectionStart ?? value.length;
   const left = value.slice(0, caret);
-  const token = left.split(/\s+/).pop() || "";
-  const start = caret - token.length;
-  const isNegative = token.startsWith("-");
-  const raw = isNegative ? token.slice(1) : token;
+  const match = left.match(/(?:^|[\s,]+)(-?)([^\s,]+)$/);
+  if (!match) return null;
+
+  const rawToken = match[2] || "";
+  const isNegative = match[1] === "-";
+  const start = caret - rawToken.length - (isNegative ? 1 : 0);
+  const raw = rawToken.trim();
 
   if (raw.length < 2) return null;
   return { start, end: caret, isNegative, raw };
@@ -917,7 +931,7 @@ function applyTagHint(tag) {
   const before = value.slice(0, tokenInfo.start);
   const after = value.slice(tokenInfo.end);
   const finalTag = tokenInfo.isNegative ? `-${tag}` : tag;
-  const next = `${before}${finalTag} ${after.replace(/^\s+/, "")}`;
+  const next = `${before}${finalTag} ${after.replace(/^[\s,]+/, "")}`;
   dom.tagsInput.value = next;
 
   const caret = (before + finalTag + " ").length;
@@ -987,6 +1001,13 @@ dom.tagsInput.addEventListener("input", () => {
   queueTagHints();
 });
 dom.tagsInput.addEventListener("focus", queueTagHints);
+dom.tagsInput.addEventListener("blur", () => {
+  const normalizedTags = normalizeTagQuery(dom.tagsInput.value);
+  if (dom.tagsInput.value !== normalizedTags) {
+    dom.tagsInput.value = normalizedTags;
+    savePreferences();
+  }
+});
 dom.tagsInput.addEventListener("keydown", (event) => {
   if (event.key === "Escape") hideHints();
 });
