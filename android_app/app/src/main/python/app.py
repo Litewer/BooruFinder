@@ -284,8 +284,32 @@ def absolutize_source_url(source_id: str, url_value: str, attrs: dict) -> str:
 
 
 def normalize_tag_query(raw_tags: str) -> str:
-    compact = str(raw_tags or "").replace(",", " ")
-    return " ".join(part for part in compact.split() if part)
+    raw = str(raw_tags or "").replace("\r", " ").replace("\n", " ").replace("\t", " ")
+    compact = " ".join(raw.split())
+    if "," not in compact:
+        return compact
+
+    normalized_tags = []
+    for chunk in compact.split(","):
+        tag = chunk.strip()
+        if not tag:
+            continue
+        negative = tag.startswith("-")
+        if negative:
+            tag = tag[1:].strip()
+        normalized = "_".join(part for part in tag.split() if part)
+        if not normalized:
+            continue
+        normalized_tags.append(f"-{normalized}" if negative else normalized)
+    return " ".join(normalized_tags)
+
+
+def normalize_tag_hint_term(term: str) -> str:
+    raw = str(term or "").replace("\r", " ").replace("\n", " ").replace("\t", " ")
+    compact = " ".join(raw.split()).strip()
+    if not compact:
+        return ""
+    return compact.replace("_", " ")
 
 
 def media_type_from_url(url_value: str) -> str:
@@ -544,7 +568,7 @@ def fetch_source_tags(
 ):
     credentials = credentials or {}
     network_config = network_config or {}
-    pattern = term.strip()
+    pattern = normalize_tag_hint_term(term)
     if not pattern:
         return []
 
@@ -556,6 +580,7 @@ def fetch_source_tags(
         return [dict(item) for item in cached]
 
     lowered = pattern.lower()
+    api_pattern = pattern.replace(" ", "_")
     merged = {}
 
     # Exact tag lookup to surface the canonical tag (e.g. "cum")
@@ -563,7 +588,7 @@ def fetch_source_tags(
         "page": "dapi",
         "s": "tag",
         "q": "index",
-        "name": pattern,
+        "name": api_pattern,
         "limit": "1",
     }
     if credentials.get("user_id") and credentials.get("api_key"):
@@ -594,8 +619,8 @@ def fetch_source_tags(
     except Exception:  # noqa: BLE001
         pass
 
-    pattern_limit = max(20, min(limit * 6, 60))
-    for pattern_variant in (f"{pattern}%", f"%{pattern}%"):
+    pattern_limit = max(20, min(limit * 8, 80))
+    for pattern_variant in (f"{api_pattern}%", f"%{api_pattern}%"):
         pattern_params = {
             "page": "dapi",
             "s": "tag",
@@ -629,39 +654,20 @@ def fetch_source_tags(
                 name = str(tag_data.get("name", "")).strip()
                 if not name:
                     continue
-                if lowered not in name.lower():
+                comparable_name = name.replace("_", " ").lower()
+                if lowered not in comparable_name:
                     continue
                 merged[name] = max(merged.get(name, 0), to_int(tag_data.get("count"), 0))
         except Exception:  # noqa: BLE001
             continue
 
-    if not merged:
-        posts = fetch_source_posts(
-            source_id,
-            pattern,
-            0,
-            max(20, min(limit * 4, 40)),
-            "popular",
-            credentials,
-            network_config,
-            timeout,
-        )
-        for post in posts:
-            for tag in str(post.get("tags", "")).split():
-                tag_clean = tag.strip()
-                if not tag_clean:
-                    continue
-                if lowered not in tag_clean.lower():
-                    continue
-                merged[tag_clean] = merged.get(tag_clean, 0) + 1
-
     def tag_rank(name: str):
-        lowered_name = name.lower()
+        lowered_name = name.replace("_", " ").lower()
         if lowered_name == lowered:
             return (0, len(name))
         if lowered_name.startswith(lowered):
             return (1, len(name))
-        if any(marker in lowered_name for marker in (f"_{lowered}", f"-{lowered}")):
+        if any(marker in lowered_name for marker in (f" {lowered}", f"-{lowered}")):
             return (2, len(name))
         return (3, len(name))
 

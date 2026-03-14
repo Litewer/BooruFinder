@@ -11,6 +11,9 @@ const state = {
   sessionId: 0,
   hintTimer: null,
   activeToken: null,
+  hintAbortController: null,
+  hintCache: new Map(),
+  hintRequestId: 0,
   secureSaveTimer: null,
   downloadBusy: false,
 };
@@ -115,10 +118,57 @@ function pickFirstImageUrl(...urls) {
 }
 
 function normalizeTagQuery(value) {
-  return String(value || "")
-    .replace(/[\r\n\t,]+/g, " ")
+  const compact = String(value || "")
+    .replace(/[\r\n\t]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+
+  if (!compact) return "";
+  if (!compact.includes(",")) return compact;
+
+  return compact
+    .split(",")
+    .map((chunk) => chunk.trim())
+    .filter(Boolean)
+    .map((tag) => {
+      const negative = tag.startsWith("-");
+      const raw = negative ? tag.slice(1).trim() : tag;
+      const normalized = raw
+        .split(/\s+/)
+        .filter(Boolean)
+        .join("_");
+      return negative ? `-${normalized}` : normalized;
+    })
+    .filter(Boolean)
+    .join(" ");
+}
+
+function normalizeHintInput(value) {
+  return String(value || "")
+    .replace(/[\r\n\t]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeTagInputDisplay(value) {
+  const compact = normalizeHintInput(value);
+  if (!compact) return "";
+  if (!compact.includes(",")) return compact;
+  return compact
+    .split(",")
+    .map((chunk) => normalizeHintInput(chunk))
+    .filter(Boolean)
+    .join(", ");
+}
+
+function formatHintCount(value) {
+  return new Intl.NumberFormat("ru-RU").format(Number(value || 0));
+}
+
+function usesRawTokenHintMode(value) {
+  const compact = normalizeHintInput(value);
+  if (!compact || compact.includes(",")) return false;
+  return compact.split(/\s+/).some((token) => /[_:~\d]/.test(token));
 }
 
 function pickCardThumb(item) {
@@ -809,7 +859,7 @@ async function loadPage(page, switchToPage = true) {
 }
 
 async function startSearch() {
-  const normalizedTags = normalizeTagQuery(dom.tagsInput.value);
+  const normalizedTags = normalizeTagInputDisplay(dom.tagsInput.value);
   if (dom.tagsInput.value !== normalizedTags) {
     dom.tagsInput.value = normalizedTags;
     savePreferences();
@@ -840,6 +890,10 @@ async function loadNextPage(moveToLoadedPage = true) {
 }
 
 function hideHints() {
+  state.activeToken = null;
+  state.hintRequestId += 1;
+  state.hintAbortController?.abort();
+  state.hintAbortController = null;
   dom.tagHints.innerHTML = "";
   dom.tagHints.classList.add("hidden");
 }
@@ -848,16 +902,26 @@ function activeTokenInfo() {
   const value = dom.tagsInput.value;
   const caret = dom.tagsInput.selectionStart ?? value.length;
   const left = value.slice(0, caret);
-  const match = left.match(/(?:^|[\s,]+)(-?)([^\s,]+)$/);
-  if (!match) return null;
+  const separatorIndex = left.lastIndexOf(",");
+  let chunkStart = separatorIndex >= 0 ? separatorIndex + 1 : 0;
+  let chunk = left.slice(chunkStart);
+  let mode = separatorIndex >= 0 ? "comma_list" : "phrase";
 
-  const rawToken = match[2] || "";
-  const isNegative = match[1] === "-";
-  const start = caret - rawToken.length - (isNegative ? 1 : 0);
-  const raw = rawToken.trim();
+  if (separatorIndex < 0 && usesRawTokenHintMode(left)) {
+    const tokenMatch = left.match(/(?:^|\s+)(-?[^\s]+)$/);
+    if (!tokenMatch) return null;
+    chunk = tokenMatch[1] || "";
+    chunkStart = caret - chunk.length;
+    mode = "raw_token";
+  }
+
+  const trimmedChunk = chunk.replace(/^\s+/, "");
+  const start = chunkStart + (chunk.length - trimmedChunk.length);
+  const isNegative = trimmedChunk.startsWith("-");
+  const raw = normalizeHintInput(isNegative ? trimmedChunk.slice(1) : trimmedChunk);
 
   if (raw.length < 2) return null;
-  return { start, end: caret, isNegative, raw };
+  return { start, end: caret, isNegative, raw, mode };
 }
 
 async function fetchTagHints() {
@@ -884,16 +948,31 @@ async function fetchTagHints() {
 
   const params = new URLSearchParams({
     term: tokenInfo.raw,
-    limit: "8",
+    limit: "12",
     sources: sources.join(","),
     adult: "1",
   });
+  const cacheKey = `${sources.join(",")}|${tokenInfo.isNegative ? "-" : ""}${tokenInfo.raw.toLowerCase()}`;
+  const cached = state.hintCache.get(cacheKey);
+  if (cached) {
+    dom.tagHints.innerHTML = cached;
+    dom.tagHints.classList.remove("hidden");
+    return;
+  }
+
+  state.hintRequestId += 1;
+  const requestId = state.hintRequestId;
+  state.hintAbortController?.abort();
+  const controller = new AbortController();
+  state.hintAbortController = controller;
 
   try {
     const res = await fetch(`/api/tags?${params.toString()}`, {
       headers: buildAuthHeaders(),
+      signal: controller.signal,
     });
     const data = await res.json();
+    if (requestId !== state.hintRequestId) return;
     if (!res.ok) {
       hideHints();
       return;
@@ -912,13 +991,15 @@ async function fetchTagHints() {
             <span class="hint-tag">${escapeHtml(hint.name)}</span>
             <span class="hint-site">${escapeHtml(hint.source_name)}</span>
           </span>
-          <span class="hint-count">${hint.count}</span>
+          <span class="hint-count">${formatHintCount(hint.count)}</span>
         </button>
       `
       )
       .join("");
+    state.hintCache.set(cacheKey, dom.tagHints.innerHTML);
     dom.tagHints.classList.remove("hidden");
-  } catch {
+  } catch (error) {
+    if (error?.name === "AbortError") return;
     hideHints();
   }
 }
@@ -931,10 +1012,26 @@ function applyTagHint(tag) {
   const before = value.slice(0, tokenInfo.start);
   const after = value.slice(tokenInfo.end);
   const finalTag = tokenInfo.isNegative ? `-${tag}` : tag;
-  const next = `${before}${finalTag} ${after.replace(/^[\s,]+/, "")}`;
+
+  if (tokenInfo.mode === "raw_token") {
+    const cleanedAfter = after.replace(/^\s+/, "");
+    const next = cleanedAfter ? `${before}${finalTag} ${cleanedAfter}` : `${before}${finalTag}`;
+    dom.tagsInput.value = next;
+    const caret = `${before}${finalTag}`.length;
+    dom.tagsInput.focus();
+    dom.tagsInput.setSelectionRange(caret, caret);
+    hideHints();
+    savePreferences();
+    return;
+  }
+
+  const cleanedBefore = before.replace(/\s*$/, before.trimEnd().endsWith(",") ? " " : "");
+  const cleanedAfter = after.replace(/^[\s,]+/, "");
+  const suffix = cleanedAfter ? `, ${cleanedAfter}` : ", ";
+  const next = `${cleanedBefore}${finalTag}${suffix}`;
   dom.tagsInput.value = next;
 
-  const caret = (before + finalTag + " ").length;
+  const caret = `${cleanedBefore}${finalTag}, `.length;
   dom.tagsInput.focus();
   dom.tagsInput.setSelectionRange(caret, caret);
   hideHints();
@@ -943,7 +1040,7 @@ function applyTagHint(tag) {
 
 function queueTagHints() {
   clearTimeout(state.hintTimer);
-  state.hintTimer = setTimeout(fetchTagHints, 250);
+  state.hintTimer = setTimeout(fetchTagHints, 90);
 }
 
 function setupAutoPaging() {
@@ -1002,7 +1099,7 @@ dom.tagsInput.addEventListener("input", () => {
 });
 dom.tagsInput.addEventListener("focus", queueTagHints);
 dom.tagsInput.addEventListener("blur", () => {
-  const normalizedTags = normalizeTagQuery(dom.tagsInput.value);
+  const normalizedTags = normalizeTagInputDisplay(dom.tagsInput.value);
   if (dom.tagsInput.value !== normalizedTags) {
     dom.tagsInput.value = normalizedTags;
     savePreferences();
