@@ -20,6 +20,11 @@ set ANDROID_SDK_ROOT=%SDK_DIR%
 
 echo sdk.dir=%SDK_DIR:\=\\%> "%APP_DIR%\local.properties"
 
+copy /Y "%~dp0app.py" "%APP_DIR%\app\src\main\python\app.py" >nul
+copy /Y "%~dp0static\index.html" "%APP_DIR%\app\src\main\python\static\index.html" >nul
+copy /Y "%~dp0static\app.js" "%APP_DIR%\app\src\main\python\static\app.js" >nul
+copy /Y "%~dp0static\app.css" "%APP_DIR%\app\src\main\python\static\app.css" >nul
+
 pushd "%APP_DIR%"
 call "%GRADLE_BIN%" assembleDebug
 if errorlevel 1 (

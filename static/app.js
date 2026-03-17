@@ -1,196 +1,133 @@
+﻿const runtimeQuery = new URLSearchParams(window.location.search);
+const runtimeAndroid = runtimeQuery.get("android") === "1" || /Android/i.test(navigator.userAgent || "");
+const FAVORITES_KEY = "bf_favorites_v2";
+const PREFS_KEY = "bf_prefs_v3";
+const DEFAULT_THEME_OPTIONS = [
+  { id: "dark_ref", name: "Dark Ref" },
+  { id: "pink_cyber", name: "Pink Cyber Pastel" },
+  { id: "old_neko", name: "Old Neko" },
+  { id: "retro_blue", name: "Neo 2005 CRT" },
+];
+
 const state = {
-  currentPage: 0,
+  platform: runtimeAndroid ? "android" : "desktop",
+  view: "home",
+  searchMode: "builder",
+  builderMode: "include",
+  includeTags: [],
+  excludeTags: [],
   pageMap: new Map(),
   pageHasMore: new Map(),
-  filteredItems: [],
-  performanceMode: false,
-  viewMode: "search",
-  favorites: new Map(),
-  viewerIndex: -1,
+  currentPage: 0,
+  searchMeta: null,
   loading: false,
   sessionId: 0,
-  hintTimer: null,
-  activeToken: null,
-  hintAbortController: null,
-  hintCache: new Map(),
-  hintRequestId: 0,
+  autocompleteItems: [],
+  autocompleteAbort: null,
+  autocompleteReqId: 0,
+  autocompleteCache: new Map(),
+  home: null,
+  trendingWindow: "7d",
+  favorites: new Map(),
+  viewerItems: [],
+  viewerIndex: -1,
   secureSaveTimer: null,
+  themeOptions: DEFAULT_THEME_OPTIONS.slice(),
   downloadBusy: false,
 };
 
 const dom = {
-  tagsInput: document.getElementById("tagsInput"),
-  tagHints: document.getElementById("tagHints"),
-  blacklistInput: document.getElementById("blacklistInput"),
+  workspace: document.getElementById("workspace"),
+  topNav: document.getElementById("topNav"),
+  mobileNav: document.getElementById("mobileNav"),
+  builderTabBtn: document.getElementById("builderTabBtn"),
+  advancedTabBtn: document.getElementById("advancedTabBtn"),
+  builderBox: document.getElementById("builderBox"),
+  advancedBox: document.getElementById("advancedBox"),
+  builderModeBtn: document.getElementById("builderModeBtn"),
+  builderInput: document.getElementById("builderInput"),
+  addTagBtn: document.getElementById("addTagBtn"),
+  autocompleteMenu: document.getElementById("autocompleteMenu"),
+  selectedTags: document.getElementById("selectedTags"),
+  rawQueryInput: document.getElementById("rawQueryInput"),
+  sourceSelect: document.getElementById("sourceSelect"),
   sortSelect: document.getElementById("sortSelect"),
-  limitSelect: document.getElementById("limitSelect"),
+  ratingSelect: document.getElementById("ratingSelect"),
   minScoreSelect: document.getElementById("minScoreSelect"),
+  limitSelect: document.getElementById("limitSelect"),
   adultCheckbox: document.getElementById("adultCheckbox"),
+  searchBtn: document.getElementById("searchBtn"),
+  clearQueryBtn: document.getElementById("clearQueryBtn"),
+  loadMoreBtn: document.getElementById("loadMoreBtn"),
+  favoritesBtn: document.getElementById("favoritesBtn"),
+  openDownloadsBtn: document.getElementById("openDownloadsBtn"),
+  openSettingsBtn: document.getElementById("openSettingsBtn"),
+  resolvedQueryBar: document.getElementById("resolvedQueryBar"),
+  homeView: document.getElementById("homeView"),
+  resultsView: document.getElementById("resultsView"),
+  favoritesView: document.getElementById("favoritesView"),
+  settingsView: document.getElementById("settingsView"),
+  homeStatus: document.getElementById("homeStatus"),
+  recentQueries: document.getElementById("recentQueries"),
+  trendingTabs: document.getElementById("trendingTabs"),
+  trendingSections: document.getElementById("trendingSections"),
+  featuredSections: document.getElementById("featuredSections"),
+  newsList: document.getElementById("newsList"),
+  resultCount: document.getElementById("resultCount"),
+  statusText: document.getElementById("statusText"),
+  errorBox: document.getElementById("errorBox"),
+  activeQuery: document.getElementById("activeQuery"),
+  grid: document.getElementById("grid"),
+  paginationBar: document.getElementById("paginationBar"),
+  favoritesTitle: document.getElementById("favoritesTitle"),
+  favoritesGrid: document.getElementById("favoritesGrid"),
+  securityStatus: document.getElementById("securityStatus"),
   rule34UserId: document.getElementById("rule34UserId"),
   rule34ApiKey: document.getElementById("rule34ApiKey"),
   gelbooruUserId: document.getElementById("gelbooruUserId"),
   gelbooruApiKey: document.getElementById("gelbooruApiKey"),
   proxyUrl: document.getElementById("proxyUrl"),
-  securityStatus: document.getElementById("securityStatus"),
-  clearSecureBtn: document.getElementById("clearSecureBtn"),
-  sourceSelect: document.getElementById("sourceSelect"),
   themeSelect: document.getElementById("themeSelect"),
-  favoritesBtn: document.getElementById("favoritesBtn"),
-  searchBtn: document.getElementById("searchBtn"),
-  loadMoreBtn: document.getElementById("loadMoreBtn"),
-  openDownloadsBtn: document.getElementById("openDownloadsBtn"),
-  resultCount: document.getElementById("resultCount"),
-  statusText: document.getElementById("statusText"),
-  grid: document.getElementById("grid"),
-  paginationBar: document.getElementById("paginationBar"),
-  scrollSentinel: document.getElementById("scrollSentinel"),
-  errorBox: document.getElementById("errorBox"),
+  refreshHomeBtn: document.getElementById("refreshHomeBtn"),
+  clearSecureBtn: document.getElementById("clearSecureBtn"),
   viewer: document.getElementById("viewer"),
   mediaHolder: document.getElementById("mediaHolder"),
   metaBox: document.getElementById("metaBox"),
-  prevBtn: document.getElementById("prevBtn"),
-  nextBtn: document.getElementById("nextBtn"),
   downloadCurrentBtn: document.getElementById("downloadCurrentBtn"),
   likeCurrentBtn: document.getElementById("likeCurrentBtn"),
+  prevBtn: document.getElementById("prevBtn"),
+  nextBtn: document.getElementById("nextBtn"),
   closeBtn: document.getElementById("closeBtn"),
 };
 
-const PREF_KEYS = ["sortSelect", "limitSelect", "sourceSelect", "themeSelect", "tagsInput", "blacklistInput", "adultCheckbox"];
-const AUTH_REQUIRED = {
-  rule34: true,
-  gelbooru: true,
-};
-const FAVORITES_KEY = "bf_favorites_v1";
-const runtimeQuery = new URLSearchParams(window.location.search);
-const runtimeAndroid = runtimeQuery.get("android") === "1" || /Android/i.test(navigator.userAgent || "");
-state.performanceMode = runtimeAndroid;
-
-const THEME_PROFILES = {
-  old_neko: {
-    labels: {
-      search: "Поиск",
-      loadMore: "Загрузить еще",
-      downloads: "Папка загрузок",
-      openPost: "Пост",
-      download: "Скачать",
-      favorites: "Любимое",
-      like: "Лайк видео",
-      liked: "В любимом",
-    },
-    chrome: "neko",
-  },
-  retro_blue: {
-    labels: {
-      search: "RUN QUERY",
-      loadMore: "NEXT BLOCK",
-      downloads: "OPEN CACHE DIR",
-      openPost: "SOURCE",
-      download: "SAVE BIN",
-      favorites: "FAVORITES",
-      like: "LIKE VID",
-      liked: "LIKED",
-    },
-    chrome: "retro",
-  },
-};
+document.body.dataset.platform = state.platform;
 
 function escapeHtml(value) {
-  return String(value)
+  return String(value ?? "")
     .replaceAll("&", "&amp;")
     .replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;");
 }
 
-function isVideoUrl(url) {
-  const value = String(url || "").toLowerCase();
-  return [".mp4", ".webm", ".mov", ".m4v", ".avi", ".mkv"].some((ext) => value.includes(ext));
-}
-
-function pickFirstImageUrl(...urls) {
-  for (const value of urls) {
-    const url = String(value || "").trim();
-    if (!url) continue;
-    if (isVideoUrl(url)) continue;
-    return url;
-  }
-  return "";
-}
-
-function normalizeTagQuery(value) {
-  const compact = String(value || "")
-    .replace(/[\r\n\t]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-
-  if (!compact) return "";
-  if (!compact.includes(",")) return compact;
-
-  return compact
-    .split(",")
-    .map((chunk) => chunk.trim())
-    .filter(Boolean)
-    .map((tag) => {
-      const negative = tag.startsWith("-");
-      const raw = negative ? tag.slice(1).trim() : tag;
-      const normalized = raw
-        .split(/\s+/)
-        .filter(Boolean)
-        .join("_");
-      return negative ? `-${normalized}` : normalized;
-    })
-    .filter(Boolean)
-    .join(" ");
-}
-
-function normalizeHintInput(value) {
+function normalizePhrase(value) {
   return String(value || "")
     .replace(/[\r\n\t]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
 
-function normalizeTagInputDisplay(value) {
-  const compact = normalizeHintInput(value);
-  if (!compact) return "";
-  if (!compact.includes(",")) return compact;
-  return compact
-    .split(",")
-    .map((chunk) => normalizeHintInput(chunk))
-    .filter(Boolean)
-    .join(", ");
+function dedupe(values) {
+  return [...new Set((values || []).map((value) => normalizePhrase(value)).filter(Boolean))];
 }
 
-function formatHintCount(value) {
+function formatNumber(value) {
   return new Intl.NumberFormat("ru-RU").format(Number(value || 0));
 }
 
-function usesRawTokenHintMode(value) {
-  const compact = normalizeHintInput(value);
-  if (!compact || compact.includes(",")) return false;
-  return compact.split(/\s+/).some((token) => /[_:~\d]/.test(token));
-}
-
-function pickCardThumb(item) {
-  const preview = item.preview_url || "";
-  const sample = item.sample_url || "";
-  const file = item.file_url || "";
-  const fullImage = pickFirstImageUrl(file, sample, preview);
-  const poster = pickFirstImageUrl(sample, preview, file);
-
-  if (item.media_type === "video") {
-    if (state.performanceMode) {
-      if (poster) return { kind: "image", src: poster };
-      return { kind: "placeholder" };
-    }
-    // Prefer image poster when available; otherwise render a muted video clip.
-    if (sample && !isVideoUrl(sample)) return { kind: "image", src: sample };
-    if (preview && !isVideoUrl(preview)) return { kind: "image", src: preview };
-    if (sample || file) return { kind: "video", src: sample || file, poster: poster || "" };
-    return { kind: "placeholder" };
-  }
-
-  return { kind: "image", src: fullImage || sample || preview || file };
+function isVideoUrl(url) {
+  const value = String(url || "").toLowerCase();
+  return [".mp4", ".webm", ".mov", ".m4v", ".avi", ".mkv"].some((ext) => value.includes(ext));
 }
 
 function proxyMediaUrl(url) {
@@ -199,96 +136,20 @@ function proxyMediaUrl(url) {
   return `/api/media?url=${encodeURIComponent(raw)}`;
 }
 
-function setStatus(text) {
-  dom.statusText.textContent = text;
-}
-
-function setError(text) {
-  if (!text) {
-    dom.errorBox.classList.add("hidden");
-    dom.errorBox.textContent = "";
-    return;
+function pickThumb(item) {
+  const preview = String(item.preview_url || "");
+  const sample = String(item.sample_url || "");
+  const file = String(item.file_url || "");
+  const still = [sample, preview, file].find((url) => url && !isVideoUrl(url)) || "";
+  if (item.media_type === "video") {
+    return { kind: still ? "image" : "video", src: still || sample || file };
   }
-  dom.errorBox.textContent = text;
-  dom.errorBox.classList.remove("hidden");
-}
-
-function applyTheme(themeName) {
-  const nextTheme = Object.prototype.hasOwnProperty.call(THEME_PROFILES, themeName)
-    ? themeName
-    : "old_neko";
-  const profile = THEME_PROFILES[nextTheme];
-  document.body.setAttribute("data-theme", nextTheme);
-  document.body.setAttribute("data-theme-chrome", profile.chrome);
-  if (dom.themeSelect.value !== nextTheme) {
-    dom.themeSelect.value = nextTheme;
-  }
-  dom.searchBtn.textContent = profile.labels.search;
-  dom.loadMoreBtn.textContent = profile.labels.loadMore;
-  dom.openDownloadsBtn.textContent = profile.labels.downloads;
-  dom.downloadCurrentBtn.textContent = profile.labels.download;
-  if (state.viewerIndex >= 0) {
-    updateViewerLikeButton();
-  } else {
-    dom.likeCurrentBtn.textContent = profile.labels.like;
-  }
-  updateFavoritesButton();
-}
-
-function formatBytes(value) {
-  const size = Number(value || 0);
-  if (!Number.isFinite(size) || size <= 0) return "0 B";
-  const units = ["B", "KB", "MB", "GB"];
-  let n = size;
-  let i = 0;
-  while (n >= 1024 && i < units.length - 1) {
-    n /= 1024;
-    i += 1;
-  }
-  return `${n.toFixed(n >= 10 || i === 0 ? 0 : 1)} ${units[i]}`;
-}
-
-async function downloadItem(item) {
-  if (!item?.file_url) {
-    setError("Нет URL файла для скачивания");
-    return;
-  }
-  if (state.downloadBusy) return;
-  state.downloadBusy = true;
-  setStatus(`Скачивание: ${item.id}...`);
-  setError("");
-
-  try {
-    const res = await fetch("/api/download", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...buildAuthHeaders(),
-      },
-      body: JSON.stringify({
-        url: item.file_url,
-        source_id: item.source_id,
-        post_id: item.id,
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok || !data.ok) {
-      throw new Error(data.error || "Не удалось скачать файл");
-    }
-    setStatus(`Скачано: ${data.filename} (${formatBytes(data.size)})`);
-    setError("");
-  } catch (error) {
-    setStatus("Ошибка скачивания");
-    setError(error.message || String(error));
-  } finally {
-    state.downloadBusy = false;
-  }
+  return { kind: "image", src: sample || preview || file };
 }
 
 function selectedSources() {
-  const value = (dom.sourceSelect.value || "rule34").trim();
-  if (value === "both") return ["rule34", "gelbooru"];
-  return [value];
+  const value = String(dom.sourceSelect.value || "both").trim();
+  return value === "both" ? ["rule34", "gelbooru"] : [value];
 }
 
 function buildAuthHeaders() {
@@ -301,64 +162,171 @@ function buildAuthHeaders() {
   };
 }
 
-function missingAuthSources(sources) {
-  const missing = [];
-  for (const source of sources) {
-    if (!AUTH_REQUIRED[source]) continue;
-    if (source === "rule34" && (!dom.rule34UserId.value.trim() || !dom.rule34ApiKey.value.trim())) {
-      missing.push("Rule34");
-    }
-    if (source === "gelbooru" && (!dom.gelbooruUserId.value.trim() || !dom.gelbooruApiKey.value.trim())) {
-      missing.push("Gelbooru");
-    }
+function setStatus(text) {
+  dom.statusText.textContent = text || "Ready";
+}
+
+function setError(text) {
+  if (!text) {
+    dom.errorBox.classList.add("hidden");
+    dom.errorBox.textContent = "";
+    return;
   }
-  return missing;
+  dom.errorBox.textContent = text;
+  dom.errorBox.classList.remove("hidden");
 }
 
-function savePreferences() {
-  PREF_KEYS.forEach((key) => {
-    const el = dom[key];
-    if (!el) return;
-    const value = el.type === "checkbox" ? String(el.checked) : el.value;
-    localStorage.setItem(`bf_${key}`, value);
-  });
+function favoriteKey(item) {
+  return `${item.source_id}:${item.id}`;
 }
 
-function loadPreferences() {
-  PREF_KEYS.forEach((key) => {
-    const el = dom[key];
-    const saved = localStorage.getItem(`bf_${key}`);
-    if (!el || saved === null) return;
-    if (el.type === "checkbox") {
-      el.checked = saved === "true";
-    } else {
-      el.value = saved;
-    }
+function isFavorited(item) {
+  return item ? state.favorites.has(favoriteKey(item)) : false;
+}
+
+function favoriteList() {
+  return [...state.favorites.values()].sort((a, b) => Number(b.favorite_ts || 0) - Number(a.favorite_ts || 0));
+}
+
+function saveFavorites() {
+  localStorage.setItem(FAVORITES_KEY, JSON.stringify(favoriteList()));
+}
+
+function loadFavorites() {
+  state.favorites.clear();
+  try {
+    const raw = localStorage.getItem(FAVORITES_KEY);
+    if (!raw) return;
+    const items = JSON.parse(raw);
+    if (!Array.isArray(items)) return;
+    items.forEach((item) => {
+      if (item?.source_id && item?.id) {
+        state.favorites.set(favoriteKey(item), item);
+      }
+    });
+  } catch {
+    // no-op
+  }
+}
+function collectPrefs() {
+  return {
+    theme: document.body.dataset.theme || "dark_ref",
+    source: dom.sourceSelect.value || "both",
+    sort: dom.sortSelect.value || "popular",
+    rating: dom.ratingSelect.value || "any",
+    minScore: dom.minScoreSelect.value || "0",
+    limit: dom.limitSelect.value || "36",
+    adult: dom.adultCheckbox.checked,
+    searchMode: state.searchMode,
+  };
+}
+
+function savePrefs() {
+  localStorage.setItem(PREFS_KEY, JSON.stringify(collectPrefs()));
+}
+
+function loadPrefs() {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    if (!raw) return;
+    const prefs = JSON.parse(raw);
+    if (prefs.theme) applyTheme(prefs.theme);
+    if (prefs.source) dom.sourceSelect.value = prefs.source;
+    if (prefs.sort) dom.sortSelect.value = prefs.sort;
+    if (prefs.rating) dom.ratingSelect.value = prefs.rating;
+    if (prefs.minScore) dom.minScoreSelect.value = prefs.minScore;
+    if (prefs.limit) dom.limitSelect.value = prefs.limit;
+    dom.adultCheckbox.checked = Boolean(prefs.adult);
+    if (prefs.searchMode === "advanced") setSearchMode("advanced");
+  } catch {
+    // no-op
+  }
+}
+
+function applyTheme(themeId) {
+  const nextTheme = state.themeOptions.some((item) => item.id === themeId) ? themeId : "dark_ref";
+  document.body.dataset.theme = nextTheme;
+  if (dom.themeSelect.value !== nextTheme) {
+    dom.themeSelect.value = nextTheme;
+  }
+  savePrefs();
+}
+
+function syncThemeOptions() {
+  dom.themeSelect.innerHTML = state.themeOptions
+    .map((item) => `<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`)
+    .join("");
+  const desired = document.body.dataset.theme || "dark_ref";
+  dom.themeSelect.value = state.themeOptions.some((item) => item.id === desired) ? desired : state.themeOptions[0].id;
+}
+
+function updateFavoritesButton() {
+  dom.favoritesBtn.textContent = `Favorites (${state.favorites.size})`;
+  dom.favoritesBtn.classList.toggle("toggle-active", state.view === "favorites");
+}
+
+function toggleFavorite(item) {
+  if (!item) return;
+  const key = favoriteKey(item);
+  if (state.favorites.has(key)) {
+    state.favorites.delete(key);
+    setStatus("Removed from favorites");
+  } else {
+    state.favorites.set(key, { ...item, favorite_ts: Date.now() });
+    setStatus("Saved to favorites");
+  }
+  saveFavorites();
+  updateFavoritesButton();
+  renderFavorites();
+  renderResults();
+  updateViewerLikeButton();
+}
+
+function setView(view) {
+  state.view = view;
+  dom.homeView.classList.toggle("view-active", view === "home");
+  dom.homeView.classList.toggle("hidden", view !== "home");
+  dom.resultsView.classList.toggle("view-active", view === "search");
+  dom.resultsView.classList.toggle("hidden", view !== "search");
+  dom.favoritesView.classList.toggle("view-active", view === "favorites");
+  dom.favoritesView.classList.toggle("hidden", view !== "favorites");
+  dom.settingsView.classList.toggle("view-active", view === "settings");
+  dom.settingsView.classList.toggle("hidden", view !== "settings");
+  dom.workspace.className = `workspace ${view}-mode`;
+  document.querySelectorAll(".nav-btn, .mobile-nav-btn").forEach((button) => {
+    button.classList.toggle("active", button.dataset.view === view);
   });
+  updateFavoritesButton();
+}
+
+function setSearchMode(mode) {
+  state.searchMode = mode;
+  dom.builderBox.classList.toggle("hidden", mode !== "builder");
+  dom.advancedBox.classList.toggle("hidden", mode !== "advanced");
+  dom.builderTabBtn.classList.toggle("active", mode === "builder");
+  dom.advancedTabBtn.classList.toggle("active", mode === "advanced");
+  savePrefs();
+}
+
+function setBuilderMode(mode) {
+  state.builderMode = mode === "exclude" ? "exclude" : "include";
+  dom.builderModeBtn.textContent = state.builderMode === "include" ? "Include" : "Exclude";
+  dom.builderModeBtn.classList.toggle("active", state.builderMode === "exclude");
 }
 
 function collectSecurePayload() {
   return {
     credentials: {
-      rule34: {
-        user_id: dom.rule34UserId.value.trim(),
-        api_key: dom.rule34ApiKey.value.trim(),
-      },
-      gelbooru: {
-        user_id: dom.gelbooruUserId.value.trim(),
-        api_key: dom.gelbooruApiKey.value.trim(),
-      },
+      rule34: { user_id: dom.rule34UserId.value.trim(), api_key: dom.rule34ApiKey.value.trim() },
+      gelbooru: { user_id: dom.gelbooruUserId.value.trim(), api_key: dom.gelbooruApiKey.value.trim() },
     },
-    network: {
-      proxy_url: dom.proxyUrl.value.trim(),
-    },
+    network: { proxy_url: dom.proxyUrl.value.trim() },
   };
 }
 
 function applySecurePayload(payload) {
   const credentials = payload?.credentials || {};
   const network = payload?.network || {};
-
   dom.rule34UserId.value = credentials.rule34?.user_id || "";
   dom.rule34ApiKey.value = credentials.rule34?.api_key || "";
   dom.gelbooruUserId.value = credentials.gelbooru?.user_id || "";
@@ -370,13 +338,7 @@ async function refreshSecurityStatus() {
   try {
     const res = await fetch("/api/security");
     const data = await res.json();
-    if (!res.ok) {
-      dom.securityStatus.textContent = "Security: unavailable";
-      return;
-    }
-    const storage = String(data.storage || "").toUpperCase();
-    const proxy = data.proxy_active ? "proxy on" : "proxy off";
-    dom.securityStatus.textContent = `Security: ${storage} storage, HTTPS only, ${proxy}`;
+    dom.securityStatus.textContent = `Security: ${String(data.storage || "plain").toUpperCase()} / HTTPS only / cache ${data.cache_db ? "ready" : "off"}`;
   } catch {
     dom.securityStatus.textContent = "Security: unavailable";
   }
@@ -386,10 +348,9 @@ async function loadSecureConfig() {
   try {
     const res = await fetch("/api/secure-config");
     const data = await res.json();
-    if (!res.ok) return;
-    applySecurePayload(data);
+    if (res.ok) applySecurePayload(data);
   } catch {
-    // no-op, keep empty fields
+    // no-op
   }
 }
 
@@ -408,324 +369,507 @@ async function saveSecureConfig() {
 
 function queueSecureSave() {
   clearTimeout(state.secureSaveTimer);
-  state.secureSaveTimer = setTimeout(saveSecureConfig, 300);
+  state.secureSaveTimer = setTimeout(saveSecureConfig, 320);
 }
 
-function blacklistTags() {
-  return dom.blacklistInput.value
-    .trim()
-    .toLowerCase()
-    .split(/\s+/)
-    .filter(Boolean);
-}
-
-function isBlocked(item, blacklist) {
-  if (!blacklist.length) return false;
-  const tagSet = new Set(item.tags.toLowerCase().split(/\s+/));
-  return blacklist.some((blocked) => tagSet.has(blocked));
-}
-
-function loadedPages() {
-  return [...state.pageMap.keys()].sort((a, b) => a - b);
-}
-
-function maxLoadedPage() {
-  const pages = loadedPages();
-  return pages.length ? pages[pages.length - 1] : -1;
-}
-
-function hasMoreFromEnd() {
-  const maxPage = maxLoadedPage();
-  if (maxPage < 0) return false;
-  return state.pageHasMore.get(maxPage) === true;
-}
-
-function currentRawItems() {
-  return state.pageMap.get(state.currentPage) || [];
-}
-
-function currentThemeProfile() {
-  const key = document.body.getAttribute("data-theme") || "old_neko";
-  return THEME_PROFILES[key] || THEME_PROFILES.old_neko;
-}
-
-function favoriteKey(item) {
-  return `${item.source_id}:${item.id}`;
-}
-
-function isFavorited(item) {
-  if (!item) return false;
-  return state.favorites.has(favoriteKey(item));
-}
-
-function favoriteList() {
-  return [...state.favorites.values()].sort((a, b) => Number(b.favorite_ts || 0) - Number(a.favorite_ts || 0));
-}
-
-function saveFavorites() {
+async function openDownloadsFolder() {
   try {
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(favoriteList()));
-  } catch {
-    // no-op
+    const res = await fetch("/api/downloads/open", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || "Cannot open downloads folder");
+    }
+  } catch (error) {
+    setError(error.message || String(error));
   }
 }
 
-function loadFavorites() {
-  state.favorites.clear();
+async function downloadItem(item) {
+  if (!item?.file_url || state.downloadBusy) return;
+  state.downloadBusy = true;
+  setStatus(`Downloading ${item.id}...`);
   try {
-    const raw = localStorage.getItem(FAVORITES_KEY);
-    if (!raw) return;
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return;
-    parsed.forEach((item) => {
-      if (!item || item.media_type !== "video") return;
-      state.favorites.set(favoriteKey(item), item);
+    const res = await fetch("/api/download", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...buildAuthHeaders() },
+      body: JSON.stringify({ url: item.file_url, source_id: item.source_id, post_id: item.id }),
     });
-  } catch {
-    // no-op
+    const data = await res.json();
+    if (!res.ok || !data.ok) {
+      throw new Error(data.error || "Download failed");
+    }
+    setStatus(`Downloaded ${data.filename}`);
+  } catch (error) {
+    setError(error.message || String(error));
+  } finally {
+    state.downloadBusy = false;
   }
 }
 
-function updateFavoritesButton() {
-  const profile = currentThemeProfile();
-  const total = state.favorites.size;
-  dom.favoritesBtn.textContent = `${profile.labels.favorites} (${total})`;
-  dom.favoritesBtn.classList.toggle("toggle-active", state.viewMode === "favorites");
+async function fetchSources() {
+  const res = await fetch("/api/sources");
+  const data = await res.json();
+  const options = (data.sources || []).map((source) => `<option value="${escapeHtml(source.id)}">${escapeHtml(source.name)}</option>`);
+  options.push('<option value="both">Rule34 + Gelbooru</option>');
+  dom.sourceSelect.innerHTML = options.join("");
+  state.themeOptions = Array.isArray(data.theme_options) && data.theme_options.length ? data.theme_options : DEFAULT_THEME_OPTIONS.slice();
+  syncThemeOptions();
+}
+function removeTag(mode, index) {
+  if (mode === "exclude") {
+    state.excludeTags.splice(index, 1);
+  } else {
+    state.includeTags.splice(index, 1);
+  }
+  renderSelectedTags();
 }
 
-function likeLabel(item) {
-  const profile = currentThemeProfile();
-  return isFavorited(item) ? profile.labels.liked : profile.labels.like;
+function addBuilderTag(rawValue, mode = state.builderMode) {
+  const value = normalizePhrase(rawValue);
+  if (!value) return false;
+  if (mode === "exclude") {
+    state.excludeTags = dedupe([...state.excludeTags, value]);
+    state.includeTags = state.includeTags.filter((tag) => tag !== value);
+  } else {
+    state.includeTags = dedupe([...state.includeTags, value]);
+    state.excludeTags = state.excludeTags.filter((tag) => tag !== value);
+  }
+  dom.builderInput.value = "";
+  hideAutocomplete();
+  renderSelectedTags();
+  return true;
 }
 
-function toggleFavorite(item) {
-  if (!item || item.media_type !== "video") {
-    setError("В Favorites добавляются только видео.");
+function renderSelectedTags() {
+  const items = [];
+  state.includeTags.forEach((tag, index) => {
+    items.push(`<span class="tag-chip"><span>${escapeHtml(tag)}</span><button data-remove-tag="include:${index}" type="button">×</button></span>`);
+  });
+  state.excludeTags.forEach((tag, index) => {
+    items.push(`<span class="tag-chip exclude"><span>${escapeHtml(tag)}</span><button data-remove-tag="exclude:${index}" type="button">×</button></span>`);
+  });
+  dom.selectedTags.innerHTML = items.join("") || '<span class="module-meta">No selected tags yet. Use Include / Exclude and add phrases from autocomplete.</span>';
+}
+
+function hideAutocomplete() {
+  state.autocompleteItems = [];
+  dom.autocompleteMenu.innerHTML = "";
+  dom.autocompleteMenu.classList.add("hidden");
+  state.autocompleteAbort?.abort();
+  state.autocompleteAbort = null;
+}
+
+function renderAutocomplete(items) {
+  state.autocompleteItems = items;
+  if (!items.length) {
+    hideAutocomplete();
     return;
   }
+  dom.autocompleteMenu.innerHTML = items
+    .map(
+      (item, index) => `
+        <button class="auto-item ${index === 0 ? "active" : ""}" data-auto-index="${index}" type="button">
+          <span class="auto-main">
+            <strong>${escapeHtml(item.label || item.value)}</strong>
+            <span class="auto-site">${escapeHtml(item.source_name || "Source")}</span>
+          </span>
+          <span class="auto-count">${formatNumber(item.count)}</span>
+        </button>
+      `
+    )
+    .join("");
+  dom.autocompleteMenu.classList.remove("hidden");
+}
 
-  const key = favoriteKey(item);
-  if (state.favorites.has(key)) {
-    state.favorites.delete(key);
-    setStatus("Видео удалено из Favorites");
-  } else {
-    state.favorites.set(key, {
-      ...item,
-      favorite_ts: Date.now(),
+async function fetchAutocomplete() {
+  if (state.searchMode !== "builder") {
+    hideAutocomplete();
+    return;
+  }
+  const term = normalizePhrase(dom.builderInput.value);
+  if (term.length < 2 || !dom.adultCheckbox.checked) {
+    hideAutocomplete();
+    return;
+  }
+  const cacheKey = `${selectedSources().join(",")}|${term.toLowerCase()}`;
+  if (state.autocompleteCache.has(cacheKey)) {
+    renderAutocomplete(state.autocompleteCache.get(cacheKey));
+    return;
+  }
+  state.autocompleteReqId += 1;
+  const requestId = state.autocompleteReqId;
+  state.autocompleteAbort?.abort();
+  state.autocompleteAbort = new AbortController();
+  const params = new URLSearchParams({ term, adult: "1", limit: "12", sources: selectedSources().join(",") });
+  try {
+    const res = await fetch(`/api/autocomplete?${params.toString()}`, {
+      headers: buildAuthHeaders(),
+      signal: state.autocompleteAbort.signal,
     });
-    setStatus("Видео добавлено в Favorites");
-  }
-
-  saveFavorites();
-  updateFavoritesButton();
-  renderGrid();
-  renderPagination();
-  updateViewerLikeButton();
-}
-
-function showFavorites() {
-  state.viewMode = "favorites";
-  renderGrid();
-  renderPagination();
-  updateFavoritesButton();
-  setStatus("Режим Favorites");
-  if (!state.filteredItems.length) {
-    setError("В Favorites пока нет видео.");
-  } else {
-    setError("");
+    const data = await res.json();
+    if (!res.ok || requestId !== state.autocompleteReqId) {
+      throw new Error(data.error || "Autocomplete failed");
+    }
+    const items = Array.isArray(data.items) ? data.items : [];
+    state.autocompleteCache.set(cacheKey, items);
+    renderAutocomplete(items);
+  } catch (error) {
+    if (error?.name !== "AbortError") {
+      hideAutocomplete();
+    }
   }
 }
 
-function showSearchResults() {
-  state.viewMode = "search";
-  renderGrid();
-  renderPagination();
-  updateFavoritesButton();
-  setStatus("Режим поиска");
+function queueAutocomplete() {
+  clearTimeout(queueAutocomplete.timer);
+  queueAutocomplete.timer = setTimeout(fetchAutocomplete, 80);
+}
+
+function applyAutocompleteItem(index) {
+  const item = state.autocompleteItems[index];
+  if (!item) return;
+  addBuilderTag(item.value, state.builderMode);
+}
+
+function commitPendingBuilderInput() {
+  if (state.searchMode !== "builder") return false;
+  const pending = normalizePhrase(dom.builderInput.value);
+  if (!pending) return false;
+  return addBuilderTag(pending, state.builderMode);
+}
+
+function resetSearchState() {
+  state.pageMap.clear();
+  state.pageHasMore.clear();
+  state.currentPage = 0;
+  state.searchMeta = null;
+  dom.grid.innerHTML = "";
+  dom.paginationBar.innerHTML = "";
+  dom.activeQuery.innerHTML = "";
+  renderResolvedQuery();
+}
+
+function clearQuery() {
+  state.includeTags = [];
+  state.excludeTags = [];
+  dom.builderInput.value = "";
+  dom.rawQueryInput.value = "";
+  renderSelectedTags();
+  resetSearchState();
+  setStatus("Ready");
   setError("");
 }
 
-function renderGrid() {
-  const blacklist = blacklistTags();
-  if (state.viewMode === "favorites") {
-    state.filteredItems = favoriteList();
-  } else {
-    state.filteredItems = currentRawItems().filter((item) => !isBlocked(item, blacklist));
+function populateQueryFromHistory(entry) {
+  state.includeTags = dedupe(entry.include_tags || []);
+  state.excludeTags = dedupe(entry.exclude_tags || []);
+  dom.rawQueryInput.value = entry.raw_query || "";
+  setSearchMode(entry.raw_query ? "advanced" : "builder");
+  renderSelectedTags();
+  if (Array.isArray(entry.sources) && entry.sources.length) {
+    const joined = entry.sources.length === 2 ? "both" : entry.sources[0];
+    if ([...dom.sourceSelect.options].some((option) => option.value === joined)) {
+      dom.sourceSelect.value = joined;
+    }
   }
-  const profile = currentThemeProfile();
+  if (entry.sort_mode) dom.sortSelect.value = entry.sort_mode;
+  if (entry.rating) dom.ratingSelect.value = entry.rating;
+  if (entry.min_score != null) dom.minScoreSelect.value = String(entry.min_score);
+  savePrefs();
+}
 
-  if (state.viewMode === "favorites") {
-    dom.resultCount.textContent = `${state.filteredItems.length} favorites videos`;
-  } else {
-    const totalLoadedItems = [...state.pageMap.values()].reduce((sum, items) => sum + items.length, 0);
-  dom.resultCount.textContent = `${state.filteredItems.length} на стр. ${state.currentPage + 1} | загружено ${totalLoadedItems}`;
-
-  }
-
-  if (!state.filteredItems.length) {
-    dom.grid.innerHTML = "";
+function renderRecentQueries(items) {
+  if (!items?.length) {
+    dom.recentQueries.innerHTML = '<span class="module-meta">Recent searches will appear here after your first successful query.</span>';
     return;
   }
+  dom.recentQueries.innerHTML = items
+    .map(
+      (item, index) => `
+        <button class="recent-pill" data-recent-index="${index}" type="button">
+          <span>${escapeHtml(item.display_query || "search")}</span>
+          <small>${escapeHtml((item.sources || []).join(" + ") || "both")}</small>
+        </button>
+      `
+    )
+    .join("");
+}
 
-  dom.grid.innerHTML = state.filteredItems
-    .map((item, index) => {
-      const thumb = pickCardThumb(item);
-      const tagSnippet = escapeHtml(item.tags.slice(0, 220));
-      const mediaBadge = item.media_type === "video" ? "video" : "image";
-      const rating = escapeHtml(item.rating || "-");
-      const size = `${item.width || "?"}x${item.height || "?"}`;
-      const postUrl = escapeHtml(item.post_url || "#");
-      const likeButton =
-        item.media_type === "video"
-          ? `<button class="action-btn like-btn ${isFavorited(item) ? "liked" : ""}" data-like-index="${index}" type="button">${escapeHtml(likeLabel(item))}</button>`
-          : "";
-      const mediaPreview =
-        thumb.kind === "video"
-          ? `<video class="thumb" src="${escapeHtml(proxyMediaUrl(thumb.src))}" data-direct-src="${escapeHtml(thumb.src)}" poster="${escapeHtml(proxyMediaUrl(thumb.poster || "") || "")}" muted loop autoplay playsinline preload="metadata"></video>`
-          : thumb.kind === "image"
-            ? `<img class="thumb" src="${escapeHtml(proxyMediaUrl(thumb.src))}" data-direct-src="${escapeHtml(thumb.src)}" alt="" loading="lazy" decoding="async" fetchpriority="low">`
-            : `<div class="thumb thumb-placeholder">video</div>`;
-      return `
-        <article class="card" data-index="${index}" style="--stagger:${index}; --lamp-seed:${index % 7}">
-          <div class="tv-shell">
-            <div class="tv-screen">
-              ${mediaPreview}
-              <span class="tv-glare"></span>
-              <span class="tv-static"></span>
-            </div>
-            <div class="tv-panel">
-              <span class="tv-led led-red"></span>
-              <span class="tv-led led-amber"></span>
-              <span class="tv-led led-green"></span>
-            </div>
-          </div>
-          <div class="meta">
-            <div class="line">
-              <span class="chip">${escapeHtml(item.source_name)}</span>
-              <span class="chip">${mediaBadge}</span>
-            </div>
-            <div class="line">
-              <strong>Score: ${item.score}</strong>
-              <span>ID: ${escapeHtml(item.id)}</span>
-            </div>
-            <div class="line">
-              <span>Rating: ${rating}</span>
-              <span>${size}</span>
-            </div>
-            <div class="actions">
-              <button class="action-btn" data-download-index="${index}" type="button">${escapeHtml(profile.labels.download)}</button>
-              <a class="action-btn" href="${postUrl}" target="_blank" rel="noreferrer" data-stop-open="1">${escapeHtml(profile.labels.openPost)}</a>
-              ${likeButton}
-            </div>
-            <div class="tagline">${tagSnippet}</div>
-          </div>
-        </article>
-      `;
+function renderTrendingTabs(activeWindow) {
+  const windows = state.home?.trending?.windows || ["7d", "30d", "90d", "180d"];
+  dom.trendingTabs.innerHTML = windows
+    .map((windowKey) => `<button class="tab-btn ${windowKey === activeWindow ? "active" : ""}" data-window="${windowKey}" type="button">${escapeHtml(windowKey)}</button>`)
+    .join("");
+}
+
+function renderHomeSections(target, sections, type) {
+  if (!sections?.length) {
+    target.innerHTML = '<span class="module-meta">Add your API keys in Settings to preload source content here.</span>';
+    return;
+  }
+  const gridClass = type === "feature" ? "featured-grid" : "trending-grid";
+  target.innerHTML = sections
+    .map((section) => {
+      const cards = (section.items || []).map((item, index) => {
+        const preview = item.preview || {};
+        const thumb = pickThumb(preview);
+        const thumbHtml = thumb.src
+          ? `<div class="${type}-thumb"><img src="${escapeHtml(proxyMediaUrl(thumb.src))}" alt="" loading="lazy"></div>`
+          : `<div class="${type}-thumb"></div>`;
+        const buttonAttr = type === "feature" ? `data-feature-index="${index}" data-feature-source="${escapeHtml(section.source_id)}"` : `data-trend-tag="${escapeHtml(item.tag)}"`;
+        const title = type === "feature" ? item.title : item.tag;
+        const subtitle = type === "feature" ? item.subtitle : `Score ${formatNumber(item.count)}`;
+        return `<button class="${type}-card" ${buttonAttr} type="button">${thumbHtml}<div class="${type}-copy"><h4>${escapeHtml(title)}</h4><p>${escapeHtml(subtitle)}</p></div></button>`;
+      }).join("");
+      return `<div class="source-section"><div class="source-head"><h3>${escapeHtml(section.source_name)}</h3><span class="source-label">${escapeHtml(section.source_id)}</span></div><div class="${gridClass}">${cards}</div></div>`;
     })
     .join("");
 }
 
-function renderPagination() {
-  if (state.viewMode === "favorites") {
-    dom.paginationBar.innerHTML = "";
+function renderNews(items) {
+  if (!items?.length) {
+    dom.newsList.innerHTML = '<span class="module-meta">No source news right now.</span>';
     return;
   }
+  dom.newsList.innerHTML = items
+    .map(
+      (item) => `
+        <article class="news-card">
+          <span class="eyebrow">${escapeHtml(item.source_name || "App")}</span>
+          <h4>${escapeHtml(item.title || "Untitled")}</h4>
+          <p>${escapeHtml(item.summary || "")}</p>
+          <a ${item.url ? `href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer"` : "href='#' data-stop-open='1'"}>${escapeHtml(item.published_at || "")}</a>
+        </article>
+      `
+    )
+    .join("");
+}
 
-  const pages = loadedPages();
+function renderHome(payload) {
+  state.home = payload;
+  dom.homeStatus.textContent = payload?.updated_at ? `Updated ${payload.updated_at.replace("T", " ").slice(0, 16)}` : "Ready";
+  renderRecentQueries(payload?.recent_queries || []);
+  renderTrendingTabs(payload?.trending?.window || state.trendingWindow);
+  renderHomeSections(dom.trendingSections, payload?.trending?.sections || [], "trend");
+  renderHomeSections(dom.featuredSections, payload?.featured?.sections || [], "feature");
+  renderNews(payload?.news?.items || []);
+}
+
+async function refreshHome(force = false) {
+  if (!dom.adultCheckbox.checked) {
+    dom.homeStatus.textContent = "Enable 18+ to load source content";
+    renderRecentQueries([]);
+    renderTrendingTabs(state.trendingWindow);
+    dom.trendingSections.innerHTML = '<span class="module-meta">Age gate is required for home previews.</span>';
+    dom.featuredSections.innerHTML = '<span class="module-meta">Add API keys and confirm 18+ to load featured posts.</span>';
+    renderNews([]);
+    return;
+  }
+  dom.homeStatus.textContent = force ? "Refreshing home..." : "Loading home...";
+  const params = new URLSearchParams({ adult: "1", sources: selectedSources().join(",") });
+  if (force) params.set("refresh", "1");
+  try {
+    const res = await fetch(`/api/home?${params.toString()}`, { headers: buildAuthHeaders() });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Home load failed");
+    state.trendingWindow = data?.trending?.window || state.trendingWindow;
+    renderHome(data);
+  } catch (error) {
+    dom.homeStatus.textContent = error.message || String(error);
+  }
+}
+
+async function loadTrendingWindow(windowKey) {
+  if (!dom.adultCheckbox.checked) return;
+  const params = new URLSearchParams({ adult: "1", window: windowKey, sources: selectedSources().join(",") });
+  try {
+    const res = await fetch(`/api/trending?${params.toString()}`, { headers: buildAuthHeaders() });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Trending load failed");
+    state.trendingWindow = data.window || windowKey;
+    if (!state.home) state.home = {};
+    state.home.trending = data;
+    renderTrendingTabs(state.trendingWindow);
+    renderHomeSections(dom.trendingSections, data.sections || [], "trend");
+  } catch (error) {
+    dom.homeStatus.textContent = error.message || String(error);
+  }
+}
+function buildSearchParams(page) {
+  const params = new URLSearchParams({
+    adult: dom.adultCheckbox.checked ? "1" : "0",
+    page: String(page),
+    limit: dom.limitSelect.value,
+    sort: dom.sortSelect.value,
+    rating: dom.ratingSelect.value,
+    min_score: dom.minScoreSelect.value,
+    sources: selectedSources().join(","),
+  });
+  if (state.searchMode === "advanced") {
+    const raw = normalizePhrase(dom.rawQueryInput.value);
+    if (raw) params.set("raw_query", raw);
+  } else {
+    state.includeTags.forEach((tag) => params.append("include_tags", normalizePhrase(tag)));
+    state.excludeTags.forEach((tag) => params.append("exclude_tags", normalizePhrase(tag)));
+  }
+  return params;
+}
+
+function currentResults() {
+  return state.pageMap.get(state.currentPage) || [];
+}
+
+function renderResolvedQuery() {
+  const meta = state.searchMeta;
+  if (!meta) {
+    dom.resolvedQueryBar.textContent = "Ready to search";
+    dom.activeQuery.innerHTML = "";
+    return;
+  }
+  const lines = Object.entries(meta.resolved_query || {})
+    .map(([sourceId, query]) => `<span class="query-chip"><strong>${escapeHtml(sourceId)}</strong><small>${escapeHtml(query || "")}</small></span>`)
+    .join("");
+  dom.resolvedQueryBar.innerHTML = lines || "Ready to search";
+  dom.activeQuery.innerHTML = lines || "";
+}
+
+function renderCard(item, index, scope) {
+  const thumb = pickThumb(item);
+  const thumbHtml = thumb.src
+    ? thumb.kind === "video" && !runtimeAndroid
+      ? `<div class="media-thumb"><video muted loop playsinline preload="none" data-hover-video="${escapeHtml(proxyMediaUrl(thumb.src))}"></video></div>`
+      : `<div class="media-thumb"><img src="${escapeHtml(proxyMediaUrl(thumb.src))}" alt="" loading="lazy"></div>`
+    : `<div class="media-thumb"></div>`;
+  const likeClass = isFavorited(item) ? "liked" : "";
+  return `
+    <article class="media-card" data-open-card="${scope}:${index}">
+      ${thumbHtml}
+      <div class="media-copy">
+        <div class="media-meta">
+          <span class="source-pill">${escapeHtml(item.source_name || item.source_id)}</span>
+          <span class="kind-pill">${escapeHtml(item.media_type || "image")}</span>
+          <span class="score-pill">Score ${formatNumber(item.score)}</span>
+        </div>
+        <p>${escapeHtml((item.tags || "").slice(0, 160))}</p>
+        <div class="media-actions">
+          <button data-stop-open="1" data-download="${scope}:${index}" type="button">Download</button>
+          <button class="${likeClass}" data-stop-open="1" data-like="${scope}:${index}" type="button">${isFavorited(item) ? "Liked" : "Like"}</button>
+          <a class="media-link" data-stop-open="1" href="${escapeHtml(item.post_url || "#")}" target="_blank" rel="noreferrer">Open post</a>
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function renderResults() {
+  const items = currentResults();
+  const totalLoaded = [...state.pageMap.values()].reduce((sum, list) => sum + list.length, 0);
+  dom.resultCount.textContent = `${items.length} on page ${state.currentPage + 1} / loaded ${totalLoaded}`;
+  dom.grid.innerHTML = items.map((item, index) => renderCard(item, index, "results")).join("");
+  renderResolvedQuery();
+  renderPagination();
+  bindHoverPreviews();
+}
+
+function renderPagination() {
+  const pages = [...state.pageMap.keys()].sort((a, b) => a - b);
   if (!pages.length) {
     dom.paginationBar.innerHTML = "";
     return;
   }
-
-  const buttons = pages
-    .map((page) => {
-      const activeClass = page === state.currentPage ? "active" : "";
-      return `<button class="page-btn ${activeClass}" data-page="${page}">${page + 1}</button>`;
-    })
-    .join("");
-
-  const nextPage = maxLoadedPage() + 1;
-  const moreButton = hasMoreFromEnd()
-    ? `<button class="page-btn" data-load-next="1">+ стр. ${nextPage + 1}</button>`
-    : `<button class="page-btn" disabled>Конец</button>`;
-
-  dom.paginationBar.innerHTML = `${buttons}${moreButton}`;
+  const buttons = pages.map((page) => `<button class="page-btn ${page === state.currentPage ? "active" : ""}" data-page="${page}" type="button">${page + 1}</button>`).join("");
+  const nextPage = Math.max(...pages) + 1;
+  const hasMore = state.pageHasMore.get(Math.max(...pages)) === true;
+  dom.paginationBar.innerHTML = `${buttons}${hasMore ? `<button class="page-btn" data-next-page="1" type="button">+ ${nextPage + 1}</button>` : ""}`;
 }
 
-function updateViewerLikeButton() {
-  const item = state.filteredItems[state.viewerIndex];
-  if (!item || item.media_type !== "video") {
-    dom.likeCurrentBtn.classList.add("hidden");
+function renderFavorites() {
+  const items = favoriteList();
+  dom.favoritesTitle.textContent = `Liked media (${items.length})`;
+  dom.favoritesGrid.innerHTML = items.length
+    ? items.map((item, index) => renderCard(item, index, "favorites")).join("")
+    : '<span class="module-meta">No favorites yet. Like posts from results or viewer.</span>';
+  bindHoverPreviews();
+}
+
+async function loadPage(page, switchToPage = true) {
+  if (!dom.adultCheckbox.checked) {
+    setError("Confirm 18+ first.");
     return;
   }
-  dom.likeCurrentBtn.classList.remove("hidden");
-  dom.likeCurrentBtn.textContent = likeLabel(item);
-  dom.likeCurrentBtn.classList.toggle("toggle-active", isFavorited(item));
-}
-
-function renderViewerItem(index) {
-  const item = state.filteredItems[index];
-  if (!item) return;
-
-  state.viewerIndex = index;
-  stopViewerMedia();
-  dom.mediaHolder.innerHTML = "";
-
-  if (item.media_type === "video") {
-    const video = document.createElement("video");
-    video.src = proxyMediaUrl(item.file_url);
-    video.dataset.directSrc = item.file_url;
-    video.controls = true;
-    video.autoplay = true;
-    video.loop = true;
-    video.playsInline = true;
-    video.setAttribute("playsinline", "");
-    video.muted = true;
-    video.preload = "metadata";
-    video.addEventListener("loadedmetadata", () => {
-      video.play().catch(() => {
-        // ignore autoplay block, user can start with controls
-      });
-    });
-    video.addEventListener("error", () => {
-      if (video.dataset.directSrc && video.src !== video.dataset.directSrc) {
-        video.src = video.dataset.directSrc;
-      }
-    });
-    dom.mediaHolder.appendChild(video);
-  } else {
-    const img = document.createElement("img");
-    img.src = proxyMediaUrl(item.file_url);
-    img.dataset.directSrc = item.file_url;
-    img.alt = "media";
-    img.addEventListener("error", () => {
-      if (img.dataset.directSrc && img.src !== img.dataset.directSrc) {
-        img.src = img.dataset.directSrc;
-      }
-    });
-    dom.mediaHolder.appendChild(img);
+  if (state.loading) return;
+  if (state.pageMap.has(page)) {
+    state.currentPage = page;
+    renderResults();
+    return;
   }
-
-  dom.metaBox.innerHTML = `
-    <div>Источник: <strong>${escapeHtml(item.source_name)}</strong> | Score: <strong>${item.score}</strong> | Rating: <strong>${escapeHtml(item.rating || "-")}</strong></div>
-    <div>ID: ${escapeHtml(item.id)} | Размер: ${item.width || "?"}x${item.height || "?"}</div>
-    <div>Теги: ${escapeHtml(item.tags)}</div>
-    <div><a href="${escapeHtml(item.post_url)}" target="_blank" rel="noreferrer">Открыть пост на сайте</a></div>
-  `;
-  updateViewerLikeButton();
+  const sessionAtStart = ++state.sessionId;
+  state.loading = true;
+  setStatus(`Loading page ${page + 1}...`);
+  setError("");
+  try {
+    const params = buildSearchParams(page);
+    const res = await fetch(`/api/search?${params.toString()}`, { headers: buildAuthHeaders() });
+    const data = await res.json();
+    if (sessionAtStart !== state.sessionId) return;
+    if (!res.ok) throw new Error(data.error || "Search failed");
+    state.searchMeta = data;
+    state.pageMap.set(page, data.items || []);
+    state.pageHasMore.set(page, Boolean(data.has_more));
+    if (switchToPage) state.currentPage = page;
+    setView("search");
+    renderResults();
+    setStatus(`Ready: page ${state.currentPage + 1}`);
+    if (!data.items?.length && !(data.errors || []).length) {
+      setError("No posts found for this page / filter set.");
+    }
+    if ((data.errors || []).length) {
+      setError(data.errors.map((item) => `${item.source}: ${item.message}`).join(" | "));
+    }
+    refreshHome();
+  } catch (error) {
+    setError(error.message || String(error));
+    setStatus("Search error");
+  } finally {
+    if (sessionAtStart === state.sessionId) state.loading = false;
+  }
 }
 
-function openViewer(index) {
-  renderViewerItem(index);
+async function startSearch() {
+  commitPendingBuilderInput();
+  if (
+    (state.searchMode === "builder" && !state.includeTags.length && !state.excludeTags.length) ||
+    (state.searchMode === "advanced" && !normalizePhrase(dom.rawQueryInput.value))
+  ) {
+    setError(state.searchMode === "builder" ? "Type a tag phrase or pick a suggestion first." : "Enter a raw query first.");
+    setStatus("Search blocked");
+    return;
+  }
+  await saveSecureConfig();
+  resetSearchState();
+  await loadPage(0, true);
+}
+
+async function loadNextPage() {
+  const pages = [...state.pageMap.keys()].sort((a, b) => a - b);
+  const nextPage = pages.length ? pages[pages.length - 1] + 1 : 0;
+  if (pages.length && state.pageHasMore.get(pages[pages.length - 1]) !== true) return;
+  await loadPage(nextPage, false);
+  state.currentPage = nextPage;
+  renderResults();
+}
+
+function openViewer(items, index) {
+  state.viewerItems = items;
+  state.viewerIndex = index;
+  renderViewer();
   dom.viewer.showModal();
 }
 
 function stopViewerMedia() {
-  const videos = dom.mediaHolder.querySelectorAll("video");
-  videos.forEach((video) => {
+  dom.mediaHolder.querySelectorAll("video").forEach((video) => {
     try {
       video.pause();
-      video.currentTime = 0;
       video.removeAttribute("src");
       video.load();
     } catch {
@@ -734,538 +878,215 @@ function stopViewerMedia() {
   });
 }
 
+function updateViewerLikeButton() {
+  const item = state.viewerItems[state.viewerIndex];
+  dom.likeCurrentBtn.classList.toggle("toggle-active", isFavorited(item));
+  dom.likeCurrentBtn.textContent = isFavorited(item) ? "Liked" : "Like";
+}
+
+function renderViewer() {
+  const item = state.viewerItems[state.viewerIndex];
+  if (!item) return;
+  stopViewerMedia();
+  if (item.media_type === "video") {
+    dom.mediaHolder.innerHTML = `<video src="${escapeHtml(proxyMediaUrl(item.file_url))}" controls autoplay loop playsinline></video>`;
+  } else {
+    dom.mediaHolder.innerHTML = `<img src="${escapeHtml(proxyMediaUrl(item.file_url))}" alt="media">`;
+  }
+  dom.metaBox.innerHTML = `
+    <div><strong>${escapeHtml(item.source_name || item.source_id)}</strong> | ID ${escapeHtml(item.id)} | Score ${formatNumber(item.score)}</div>
+    <div>${escapeHtml(item.width || "?")} x ${escapeHtml(item.height || "?")} | Rating ${escapeHtml(item.rating || "-")}</div>
+    <div>${escapeHtml(item.tags || "")}</div>
+    <div><a class="media-link" href="${escapeHtml(item.post_url || "#")}" target="_blank" rel="noreferrer">Open source post</a></div>
+  `;
+  updateViewerLikeButton();
+}
+
 function closeViewer() {
   stopViewerMedia();
   dom.viewer.close();
-  state.viewerIndex = -1;
-  dom.likeCurrentBtn.classList.remove("toggle-active");
-  dom.likeCurrentBtn.classList.add("hidden");
-}
-
-function nextViewer(step) {
-  if (!state.filteredItems.length) return;
-  const total = state.filteredItems.length;
-  const next = (state.viewerIndex + step + total) % total;
-  renderViewerItem(next);
-}
-
-function resetPages() {
-  state.currentPage = 0;
-  state.pageMap.clear();
-  state.pageHasMore.clear();
-  state.filteredItems = [];
+  state.viewerItems = [];
   state.viewerIndex = -1;
 }
 
-function buildSearchParams(page) {
-  const tags = normalizeTagQuery(dom.tagsInput.value);
-  const params = new URLSearchParams({
-    tags,
-    page: String(page),
-    limit: dom.limitSelect.value,
-    min_score: dom.minScoreSelect.value,
-    sort: dom.sortSelect.value,
-    sources: selectedSources().join(","),
-    adult: dom.adultCheckbox.checked ? "1" : "0",
+function moveViewer(step) {
+  if (!state.viewerItems.length) return;
+  state.viewerIndex = (state.viewerIndex + step + state.viewerItems.length) % state.viewerItems.length;
+  renderViewer();
+}
+function resolveScopeItems(scope) {
+  return scope === "favorites" ? favoriteList() : currentResults();
+}
+
+function handleContentClick(event) {
+  const autoButton = event.target.closest("[data-auto-index]");
+  if (autoButton) {
+    applyAutocompleteItem(Number(autoButton.dataset.autoIndex));
+    return;
+  }
+  const removeButton = event.target.closest("[data-remove-tag]");
+  if (removeButton) {
+    const [mode, index] = String(removeButton.dataset.removeTag || "include:0").split(":");
+    removeTag(mode, Number(index));
+    return;
+  }
+  const recentButton = event.target.closest("[data-recent-index]");
+  if (recentButton) {
+    const entry = state.home?.recent_queries?.[Number(recentButton.dataset.recentIndex)];
+    if (entry) {
+      populateQueryFromHistory(entry);
+      setView("search");
+    }
+    return;
+  }
+  const featureButton = event.target.closest("[data-feature-index]");
+  if (featureButton) {
+    const section = state.home?.featured?.sections?.find((item) => item.source_id === featureButton.dataset.featureSource);
+    const entry = section?.items?.[Number(featureButton.dataset.featureIndex)];
+    if (entry) {
+      setSearchMode("builder");
+      state.includeTags = dedupe([entry.query]);
+      state.excludeTags = [];
+      renderSelectedTags();
+      setView("search");
+      startSearch();
+    }
+    return;
+  }
+  const trendButton = event.target.closest("[data-trend-tag]");
+  if (trendButton) {
+    addBuilderTag(String(trendButton.dataset.trendTag || ""), "include");
+    setView("search");
+    return;
+  }
+  const windowButton = event.target.closest("[data-window]");
+  if (windowButton) {
+    loadTrendingWindow(windowButton.dataset.window || "7d");
+    return;
+  }
+  const pageButton = event.target.closest("[data-page]");
+  if (pageButton) {
+    state.currentPage = Number(pageButton.dataset.page || 0);
+    renderResults();
+    return;
+  }
+  if (event.target.closest("[data-next-page]")) {
+    loadNextPage();
+    return;
+  }
+  const downloadButton = event.target.closest("[data-download]");
+  if (downloadButton) {
+    const [scope, index] = String(downloadButton.dataset.download || "results:0").split(":");
+    const item = resolveScopeItems(scope)[Number(index)];
+    downloadItem(item);
+    return;
+  }
+  const likeButton = event.target.closest("[data-like]");
+  if (likeButton) {
+    const [scope, index] = String(likeButton.dataset.like || "results:0").split(":");
+    const item = resolveScopeItems(scope)[Number(index)];
+    toggleFavorite(item);
+    return;
+  }
+  const openCard = event.target.closest("[data-open-card]");
+  if (openCard && !event.target.closest("[data-stop-open]")) {
+    const [scope, index] = String(openCard.dataset.openCard || "results:0").split(":");
+    openViewer(resolveScopeItems(scope), Number(index));
+  }
+}
+
+function bindHoverPreviews() {
+  if (runtimeAndroid) return;
+  dom.grid.querySelectorAll("[data-hover-video]").forEach((video) => {
+    const src = video.dataset.hoverVideo;
+    if (!src) return;
+    const start = () => {
+      if (!video.src) video.src = src;
+      video.play().catch(() => {});
+    };
+    const stop = () => {
+      video.pause();
+      video.currentTime = 0;
+    };
+    video.closest(".media-card")?.addEventListener("mouseenter", start);
+    video.closest(".media-card")?.addEventListener("mouseleave", stop);
   });
-  return params;
 }
 
-async function loadPage(page, switchToPage = true) {
-  if (!dom.adultCheckbox.checked) {
-    setError("Нужно подтвердить 18+.");
-    return;
-  }
-  if (state.loading) {
-    return;
-  }
-
-  const sources = selectedSources();
-  if (!sources.length) {
-    setError("Выберите хотя бы один источник.");
-    return;
-  }
-  const missing = missingAuthSources(sources);
-  if (missing.length) {
-    setError(`Заполни user_id + api_key для: ${missing.join(", ")}`);
-    return;
-  }
-
-  if (state.pageMap.has(page)) {
-    state.currentPage = page;
-    renderGrid();
-    renderPagination();
-    return;
-  }
-
-  const sessionAtStart = state.sessionId;
-  state.loading = true;
-  setStatus(`Загрузка страницы ${page + 1}...`);
-  setError("");
-
-  try {
-    const params = buildSearchParams(page);
-    const res = await fetch(`/api/search?${params.toString()}`, {
-      headers: buildAuthHeaders(),
-    });
-    const data = await res.json();
-
-    if (sessionAtStart !== state.sessionId) {
-      return;
-    }
-
-    if (!res.ok) {
-      throw new Error(data.error || "Ошибка API");
-    }
-
-    state.pageMap.set(page, data.items || []);
-    state.pageHasMore.set(page, Boolean(data.has_more));
-
-    if (switchToPage) {
-      state.currentPage = page;
-    }
-
-    renderGrid();
-    renderPagination();
-
-    const sourceErrors = data.errors?.map((e) => `${e.source}: ${e.message}`).join(" | ");
-    const rawCount = Number(data.raw_count || 0);
-    const filteredCount = Number(data.count || 0);
-    const minScore = Number(dom.minScoreSelect.value || 0);
-
-    if (!sourceErrors && filteredCount === 0 && rawCount > 0 && minScore > 0) {
-      setError(`Найдено ${rawCount}, но скрыто фильтром score >= ${minScore}. Поставь "Любой score".`);
-    } else if (!sourceErrors && filteredCount === 0 && rawCount === 0) {
-      setError("По этому тегу на текущей странице ничего не найдено.");
-    }
-
-    if (sourceErrors) {
-      setError(sourceErrors);
-      setStatus(`Частичные ошибки: ${sourceErrors}`);
-    } else {
-      if (!(filteredCount === 0 && (rawCount > 0 || rawCount === 0))) {
-        setError("");
+function wireEvents() {
+  document.addEventListener("click", handleContentClick);
+  dom.topNav.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-view]");
+    if (!button) return;
+    setView(button.dataset.view === "search" ? "search" : button.dataset.view);
+  });
+  dom.mobileNav.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-view]");
+    if (!button) return;
+    setView(button.dataset.view === "search" ? "search" : button.dataset.view);
+  });
+  dom.builderTabBtn.addEventListener("click", () => setSearchMode("builder"));
+  dom.advancedTabBtn.addEventListener("click", () => setSearchMode("advanced"));
+  dom.builderModeBtn.addEventListener("click", () => setBuilderMode(state.builderMode === "include" ? "exclude" : "include"));
+  dom.addTagBtn.addEventListener("click", () => addBuilderTag(dom.builderInput.value));
+  dom.builderInput.addEventListener("input", queueAutocomplete);
+  dom.builderInput.addEventListener("focus", queueAutocomplete);
+  dom.builderInput.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") hideAutocomplete();
+    if (event.key === "Enter") {
+      event.preventDefault();
+      if (!dom.autocompleteMenu.classList.contains("hidden") && state.autocompleteItems.length) {
+        applyAutocompleteItem(0);
+      } else {
+        addBuilderTag(dom.builderInput.value);
       }
-      setStatus(`Готово: страница ${page + 1}`);
     }
-  } catch (error) {
-    setStatus("Ошибка запроса");
-    setError(error.message || String(error));
-  } finally {
-    if (sessionAtStart === state.sessionId) {
-      state.loading = false;
-    }
-  }
-}
-
-async function startSearch() {
-  const normalizedTags = normalizeTagInputDisplay(dom.tagsInput.value);
-  if (dom.tagsInput.value !== normalizedTags) {
-    dom.tagsInput.value = normalizedTags;
-    savePreferences();
-  }
-  await saveSecureConfig();
-  state.viewMode = "search";
-  state.sessionId += 1;
-  resetPages();
-  renderGrid();
-  renderPagination();
-  updateFavoritesButton();
-  await loadPage(0, true);
-}
-
-async function loadNextPage(moveToLoadedPage = true) {
-  if (state.viewMode === "favorites") {
-    return;
-  }
-  const nextPage = maxLoadedPage() + 1;
-  if (nextPage < 0) {
-    await loadPage(0, true);
-    return;
-  }
-  if (!hasMoreFromEnd() && state.pageMap.has(maxLoadedPage())) {
-    return;
-  }
-  await loadPage(nextPage, moveToLoadedPage);
-}
-
-function hideHints() {
-  state.activeToken = null;
-  state.hintRequestId += 1;
-  state.hintAbortController?.abort();
-  state.hintAbortController = null;
-  dom.tagHints.innerHTML = "";
-  dom.tagHints.classList.add("hidden");
-}
-
-function activeTokenInfo() {
-  const value = dom.tagsInput.value;
-  const caret = dom.tagsInput.selectionStart ?? value.length;
-  const left = value.slice(0, caret);
-  const separatorIndex = left.lastIndexOf(",");
-  let chunkStart = separatorIndex >= 0 ? separatorIndex + 1 : 0;
-  let chunk = left.slice(chunkStart);
-  let mode = separatorIndex >= 0 ? "comma_list" : "phrase";
-
-  if (separatorIndex < 0 && usesRawTokenHintMode(left)) {
-    const tokenMatch = left.match(/(?:^|\s+)(-?[^\s]+)$/);
-    if (!tokenMatch) return null;
-    chunk = tokenMatch[1] || "";
-    chunkStart = caret - chunk.length;
-    mode = "raw_token";
-  }
-
-  const trimmedChunk = chunk.replace(/^\s+/, "");
-  const start = chunkStart + (chunk.length - trimmedChunk.length);
-  const isNegative = trimmedChunk.startsWith("-");
-  const raw = normalizeHintInput(isNegative ? trimmedChunk.slice(1) : trimmedChunk);
-
-  if (raw.length < 2) return null;
-  return { start, end: caret, isNegative, raw, mode };
-}
-
-async function fetchTagHints() {
-  const tokenInfo = activeTokenInfo();
-  state.activeToken = tokenInfo;
-  if (!tokenInfo) {
-    hideHints();
-    return;
-  }
-  if (!dom.adultCheckbox.checked) {
-    hideHints();
-    return;
-  }
-
-  const sources = selectedSources();
-  if (!sources.length) {
-    hideHints();
-    return;
-  }
-  if (missingAuthSources(sources).length) {
-    hideHints();
-    return;
-  }
-
-  const params = new URLSearchParams({
-    term: tokenInfo.raw,
-    limit: "12",
-    sources: sources.join(","),
-    adult: "1",
   });
-  const cacheKey = `${sources.join(",")}|${tokenInfo.isNegative ? "-" : ""}${tokenInfo.raw.toLowerCase()}`;
-  const cached = state.hintCache.get(cacheKey);
-  if (cached) {
-    dom.tagHints.innerHTML = cached;
-    dom.tagHints.classList.remove("hidden");
-    return;
-  }
-
-  state.hintRequestId += 1;
-  const requestId = state.hintRequestId;
-  state.hintAbortController?.abort();
-  const controller = new AbortController();
-  state.hintAbortController = controller;
-
-  try {
-    const res = await fetch(`/api/tags?${params.toString()}`, {
-      headers: buildAuthHeaders(),
-      signal: controller.signal,
-    });
-    const data = await res.json();
-    if (requestId !== state.hintRequestId) return;
-    if (!res.ok) {
-      hideHints();
-      return;
-    }
-    const hints = data.suggestions || [];
-    if (!hints.length) {
-      hideHints();
-      return;
-    }
-
-    dom.tagHints.innerHTML = hints
-      .map(
-        (hint) => `
-        <button class="hint-item" data-tag="${escapeHtml(hint.name)}">
-          <span class="hint-left">
-            <span class="hint-tag">${escapeHtml(hint.name)}</span>
-            <span class="hint-site">${escapeHtml(hint.source_name)}</span>
-          </span>
-          <span class="hint-count">${formatHintCount(hint.count)}</span>
-        </button>
-      `
-      )
-      .join("");
-    state.hintCache.set(cacheKey, dom.tagHints.innerHTML);
-    dom.tagHints.classList.remove("hidden");
-  } catch (error) {
-    if (error?.name === "AbortError") return;
-    hideHints();
-  }
-}
-
-function applyTagHint(tag) {
-  const tokenInfo = state.activeToken;
-  if (!tokenInfo) return;
-
-  const value = dom.tagsInput.value;
-  const before = value.slice(0, tokenInfo.start);
-  const after = value.slice(tokenInfo.end);
-  const finalTag = tokenInfo.isNegative ? `-${tag}` : tag;
-
-  if (tokenInfo.mode === "raw_token") {
-    const cleanedAfter = after.replace(/^\s+/, "");
-    const next = cleanedAfter ? `${before}${finalTag} ${cleanedAfter}` : `${before}${finalTag}`;
-    dom.tagsInput.value = next;
-    const caret = `${before}${finalTag}`.length;
-    dom.tagsInput.focus();
-    dom.tagsInput.setSelectionRange(caret, caret);
-    hideHints();
-    savePreferences();
-    return;
-  }
-
-  const cleanedBefore = before.replace(/\s*$/, before.trimEnd().endsWith(",") ? " " : "");
-  const cleanedAfter = after.replace(/^[\s,]+/, "");
-  const suffix = cleanedAfter ? `, ${cleanedAfter}` : ", ";
-  const next = `${cleanedBefore}${finalTag}${suffix}`;
-  dom.tagsInput.value = next;
-
-  const caret = `${cleanedBefore}${finalTag}, `.length;
-  dom.tagsInput.focus();
-  dom.tagsInput.setSelectionRange(caret, caret);
-  hideHints();
-  savePreferences();
-}
-
-function queueTagHints() {
-  clearTimeout(state.hintTimer);
-  state.hintTimer = setTimeout(fetchTagHints, 90);
-}
-
-function setupAutoPaging() {
-  if (state.performanceMode) {
-    return;
-  }
-  const observer = new IntersectionObserver(
-    (entries) => {
-      const hit = entries.some((entry) => entry.isIntersecting);
-      if (!hit) return;
-      if (state.loading) return;
-      const maxPage = maxLoadedPage();
-      if (maxPage < 0) return;
-      if (!hasMoreFromEnd()) return;
-      const shouldSwitch = state.currentPage === maxPage;
-      loadNextPage(shouldSwitch);
-    },
-    { rootMargin: "400px 0px 400px 0px" }
-  );
-  observer.observe(dom.scrollSentinel);
-}
-
-async function fetchSources() {
-  const res = await fetch("/api/sources");
-  const data = await res.json();
-  const previousValue = dom.sourceSelect.value || localStorage.getItem("bf_sourceSelect") || "rule34";
-  const options = (data.sources || []).map((s) => `<option value="${s.id}">${s.name}</option>`);
-  options.push('<option value="both">Rule34 + Gelbooru</option>');
-  dom.sourceSelect.innerHTML = options.join("");
-  if ([...dom.sourceSelect.options].some((o) => o.value === previousValue)) {
-    dom.sourceSelect.value = previousValue;
-  } else if ([...dom.sourceSelect.options].some((o) => o.value === "rule34")) {
-    dom.sourceSelect.value = "rule34";
-  }
-}
-
-dom.searchBtn.addEventListener("click", () => startSearch());
-dom.loadMoreBtn.addEventListener("click", () => {
-  loadNextPage(true);
-});
-dom.favoritesBtn.addEventListener("click", () => {
-  if (state.viewMode === "favorites") {
-    showSearchResults();
-  } else {
-    showFavorites();
-  }
-});
-
-dom.blacklistInput.addEventListener("input", () => {
-  savePreferences();
-  renderGrid();
-});
-dom.tagsInput.addEventListener("input", () => {
-  savePreferences();
-  queueTagHints();
-});
-dom.tagsInput.addEventListener("focus", queueTagHints);
-dom.tagsInput.addEventListener("blur", () => {
-  const normalizedTags = normalizeTagInputDisplay(dom.tagsInput.value);
-  if (dom.tagsInput.value !== normalizedTags) {
-    dom.tagsInput.value = normalizedTags;
-    savePreferences();
-  }
-});
-dom.tagsInput.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") hideHints();
-});
-
-dom.tagHints.addEventListener("click", (event) => {
-  const target = event.target.closest(".hint-item");
-  if (!target) return;
-  applyTagHint(target.dataset.tag || "");
-});
-
-dom.paginationBar.addEventListener("click", (event) => {
-  const pageTarget = event.target.closest("[data-page]");
-  if (pageTarget) {
-    const page = Number(pageTarget.dataset.page);
-    if (!Number.isNaN(page)) {
-      state.currentPage = page;
-      renderGrid();
-      renderPagination();
-    }
-    return;
-  }
-  const loadTarget = event.target.closest("[data-load-next]");
-  if (loadTarget) {
-    loadNextPage(true);
-  }
-});
-
-dom.grid.addEventListener("click", (event) => {
-  const dlBtn = event.target.closest("[data-download-index]");
-  if (dlBtn) {
-    const idx = Number(dlBtn.dataset.downloadIndex);
-    if (!Number.isNaN(idx) && state.filteredItems[idx]) {
-      downloadItem(state.filteredItems[idx]);
-    }
-    return;
-  }
-  const likeBtn = event.target.closest("[data-like-index]");
-  if (likeBtn) {
-    const idx = Number(likeBtn.dataset.likeIndex);
-    if (!Number.isNaN(idx) && state.filteredItems[idx]) {
-      toggleFavorite(state.filteredItems[idx]);
-    }
-    return;
-  }
-  if (event.target.closest("[data-stop-open]")) {
-    return;
-  }
-  const card = event.target.closest(".card");
-  if (!card) return;
-  openViewer(Number(card.dataset.index));
-});
-
-dom.grid.addEventListener(
-  "error",
-  (event) => {
-    const media = event.target;
-    if (!(media instanceof HTMLImageElement || media instanceof HTMLVideoElement)) return;
-    const directSrc = media.dataset.directSrc || "";
-    if (directSrc && media.src !== directSrc) {
-      media.src = directSrc;
-    }
-  },
-  true
-);
-
-dom.closeBtn.addEventListener("click", closeViewer);
-dom.prevBtn.addEventListener("click", () => nextViewer(-1));
-dom.nextBtn.addEventListener("click", () => nextViewer(1));
-dom.viewer.addEventListener("close", () => {
-  stopViewerMedia();
-  state.viewerIndex = -1;
-  dom.likeCurrentBtn.classList.remove("toggle-active");
-  dom.likeCurrentBtn.classList.add("hidden");
-});
-dom.downloadCurrentBtn.addEventListener("click", () => {
-  if (state.viewerIndex < 0) return;
-  const item = state.filteredItems[state.viewerIndex];
-  if (item) downloadItem(item);
-});
-dom.likeCurrentBtn.addEventListener("click", () => {
-  if (state.viewerIndex < 0) return;
-  const item = state.filteredItems[state.viewerIndex];
-  if (item) toggleFavorite(item);
-});
-dom.openDownloadsBtn.addEventListener("click", async () => {
-  try {
-    const res = await fetch("/api/downloads/open", { method: "POST" });
-    const data = await res.json();
-    if (!res.ok || !data.ok) {
-      throw new Error(data.error || "Не удалось открыть папку загрузок");
-    }
-    setStatus(`Папка: ${data.path}`);
-  } catch (error) {
-    setError(error.message || String(error));
-  }
-});
-
-[
-  dom.rule34UserId,
-  dom.rule34ApiKey,
-  dom.gelbooruUserId,
-  dom.gelbooruApiKey,
-  dom.proxyUrl,
-].forEach((el) => {
-  el.addEventListener("input", () => {
-    queueSecureSave();
-    queueTagHints();
-  });
-});
-
-[dom.sortSelect, dom.limitSelect, dom.minScoreSelect, dom.sourceSelect, dom.adultCheckbox].forEach((el) => {
-  el.addEventListener("change", () => {
-    savePreferences();
-  });
-});
-
-dom.themeSelect.addEventListener("change", () => {
-  applyTheme(dom.themeSelect.value);
-  savePreferences();
-  renderGrid();
-});
-
-dom.clearSecureBtn.addEventListener("click", async () => {
-  try {
+  dom.searchBtn.addEventListener("click", startSearch);
+  dom.clearQueryBtn.addEventListener("click", clearQuery);
+  dom.loadMoreBtn.addEventListener("click", loadNextPage);
+  dom.favoritesBtn.addEventListener("click", () => setView(state.view === "favorites" ? "search" : "favorites"));
+  dom.openDownloadsBtn.addEventListener("click", openDownloadsFolder);
+  dom.openSettingsBtn.addEventListener("click", () => setView("settings"));
+  dom.refreshHomeBtn.addEventListener("click", () => refreshHome(true));
+  dom.clearSecureBtn.addEventListener("click", async () => {
     await fetch("/api/secure-config/clear", { method: "POST" });
     applySecurePayload({});
     refreshSecurityStatus();
-    setStatus("Secure-хранилище очищено");
-  } catch {
-    setError("Не удалось очистить secure-хранилище");
-  }
-});
-
-window.addEventListener("click", (event) => {
-  if (event.target === dom.tagsInput || dom.tagHints.contains(event.target)) return;
-  hideHints();
-});
-
-window.addEventListener("keydown", (event) => {
-  if (!dom.viewer.open) return;
-  if (event.key === "Escape") closeViewer();
-  if (event.key === "ArrowLeft") nextViewer(-1);
-  if (event.key === "ArrowRight") nextViewer(1);
-});
-
-async function bootstrap() {
-  loadPreferences();
-  loadFavorites();
-  document.body.setAttribute("data-platform", state.performanceMode ? "android" : "desktop");
-  applyTheme(dom.themeSelect.value || "old_neko");
-  updateFavoritesButton();
-  dom.likeCurrentBtn.classList.add("hidden");
-  if (state.performanceMode && !localStorage.getItem("bf_limitSelect")) {
-    dom.limitSelect.value = "20";
-  }
-  dom.minScoreSelect.value = "0";
-  await fetchSources();
-  await loadSecureConfig();
-  await refreshSecurityStatus();
-  setupAutoPaging();
-  setStatus("Готово к поиску");
+  });
+  dom.themeSelect.addEventListener("change", () => applyTheme(dom.themeSelect.value));
+  [dom.sourceSelect, dom.sortSelect, dom.ratingSelect, dom.minScoreSelect, dom.limitSelect, dom.adultCheckbox].forEach((el) => {
+    el.addEventListener("change", () => {
+      savePrefs();
+      refreshHome();
+    });
+  });
+  [dom.rule34UserId, dom.rule34ApiKey, dom.gelbooruUserId, dom.gelbooruApiKey, dom.proxyUrl].forEach((el) => {
+    el.addEventListener("input", queueSecureSave);
+  });
+  dom.downloadCurrentBtn.addEventListener("click", () => downloadItem(state.viewerItems[state.viewerIndex]));
+  dom.likeCurrentBtn.addEventListener("click", () => toggleFavorite(state.viewerItems[state.viewerIndex]));
+  dom.prevBtn.addEventListener("click", () => moveViewer(-1));
+  dom.nextBtn.addEventListener("click", () => moveViewer(1));
+  dom.closeBtn.addEventListener("click", closeViewer);
+  dom.viewer.addEventListener("close", stopViewerMedia);
 }
 
-bootstrap();
+async function boot() {
+  loadFavorites();
+  updateFavoritesButton();
+  renderSelectedTags();
+  wireEvents();
+  await fetchSources();
+  loadPrefs();
+  await Promise.all([loadSecureConfig(), refreshSecurityStatus()]);
+  renderFavorites();
+  renderResolvedQuery();
+  setStatus("Ready");
+  await refreshHome();
+  if (runtimeAndroid) {
+    setView("home");
+  }
+}
+
+boot();

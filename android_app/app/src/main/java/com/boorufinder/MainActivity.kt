@@ -20,6 +20,7 @@ import kotlin.concurrent.thread
 class MainActivity : AppCompatActivity() {
     private lateinit var webView: WebView
     private var loadAttempt = 0
+    private var restorePending = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -28,7 +29,8 @@ class MainActivity : AppCompatActivity() {
         webView = findViewById(R.id.webView)
         configureWebView()
         startPythonBackend()
-        waitAndLoadUi()
+        restorePending = savedInstanceState != null
+        waitAndLoadUi(savedInstanceState)
 
         onBackPressedDispatcher.addCallback(this) {
             if (webView.canGoBack()) {
@@ -91,12 +93,17 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun waitAndLoadUi() {
+    private fun waitAndLoadUi(savedInstanceState: Bundle? = null) {
         thread(name = "booru-ui-load", isDaemon = true) {
             val reachable = waitForServer()
             runOnUiThread {
                 if (!reachable && loadAttempt == 0) {
-                    Toast.makeText(this, "Сервер стартует дольше обычного", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(this, "Server warmup is taking longer than usual", Toast.LENGTH_SHORT).show()
+                }
+                if (restorePending && savedInstanceState != null) {
+                    webView.restoreState(savedInstanceState)
+                    restorePending = false
+                    return@runOnUiThread
                 }
                 webView.loadUrl("$BASE_URL/?android=1&attempt=${loadAttempt++}")
             }
@@ -124,6 +131,11 @@ class MainActivity : AppCompatActivity() {
         } catch (_: Exception) {
             false
         }
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        webView.saveState(outState)
     }
 
     override fun onDestroy() {

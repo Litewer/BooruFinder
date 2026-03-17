@@ -6,141 +6,239 @@
   <title>Booru Finder</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600&family=VT323&family=Press+Start+2P&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=Syne:wght@500;700;800&family=JetBrains+Mono:wght@400;600&family=VT323&family=Press+Start+2P&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/app.css">
 </head>
-<body data-theme="old_neko">
-  <div class="shader shader-1"></div>
-  <div class="shader shader-2"></div>
-  <div class="shader shader-3"></div>
-  <div class="noise-mask"></div>
-  <div class="scanline-mask"></div>
+<body data-theme="dark_ref">
+  <div class="bg-glow glow-a"></div>
+  <div class="bg-glow glow-b"></div>
+  <div class="bg-grid"></div>
 
-  <main class="layout">
-    <section class="panel glass">
-      <div class="panel-head">
-        <p class="panel-kicker">cat://pink-shell online</p>
-        <p class="catline">/\_/\  ( o.o )  > cyber neko</p>
+  <div class="app-shell">
+    <header class="topbar panel">
+      <div class="brand-block">
+        <span class="brand-kicker">R34 // Booru Finder</span>
+        <strong class="brand-title">Fast source-aware search for Rule34 and Gelbooru</strong>
+        <span class="brand-sub">Home feed, builder search, cached trends, featured launches, and a full-screen media viewer.</span>
       </div>
-      <h1>Booru Finder</h1>
-      <p class="sub">Теги, несколько источников, сортировка по популярности и встроенный медиаплеер.</p>
+      <nav class="top-nav" id="topNav">
+        <button class="nav-btn active" data-view="home">Home</button>
+        <button class="nav-btn" data-view="search">Search</button>
+        <button class="nav-btn" data-view="favorites">Favorites</button>
+        <button class="nav-btn" data-view="settings">Settings</button>
+      </nav>
+    </header>
 
-      <label class="field">
-        <span>Теги</span>
-        <input id="tagsInput" type="text" placeholder="example: resident evil, five nights at freddy, solo">
-        <div id="tagHints" class="tag-hints hidden"></div>
-      </label>
+    <main id="workspace" class="workspace home-mode">
+      <section class="composer panel" id="composerPanel">
+        <div class="composer-copy">
+          <span class="composer-kicker">Search constructor</span>
+          <h1 class="composer-title">Build tags like a proper booru app.</h1>
+          <p class="composer-sub">Smart autocomplete, include/exclude chips, quick filters, and advanced raw mode when you want full booru syntax.</p>
+        </div>
 
-      <label class="field">
-        <span>Черный список тегов</span>
-        <input id="blacklistInput" type="text" placeholder="через пробел, пример: gore scat">
-      </label>
+        <div class="mode-row">
+          <div class="segmented">
+            <button id="builderTabBtn" class="seg-btn active" type="button">Builder</button>
+            <button id="advancedTabBtn" class="seg-btn" type="button">Advanced</button>
+          </div>
+          <label class="field compact">
+            <span>Source</span>
+            <select id="sourceSelect"></select>
+          </label>
+        </div>
 
-      <div class="split">
-        <label class="field">
-          <span>Сортировка</span>
-          <select id="sortSelect">
-            <option value="new">Новые</option>
-            <option value="popular">Популярные</option>
-          </select>
+        <div id="builderBox" class="builder-box">
+          <div class="builder-row">
+            <button id="builderModeBtn" class="mode-btn" type="button">Include</button>
+            <label class="field search-field">
+              <span>Tag phrase</span>
+              <div class="search-input-shell">
+                <input id="builderInput" type="text" placeholder="resident evil village, five nights at freddy's help wanted">
+                <button id="addTagBtn" class="mini-btn" type="button">Add</button>
+              </div>
+              <div id="autocompleteMenu" class="autocomplete-menu hidden"></div>
+            </label>
+          </div>
+          <div id="selectedTags" class="selected-tags"></div>
+        </div>
+
+        <div id="advancedBox" class="advanced-box hidden">
+          <label class="field">
+            <span>Raw booru query</span>
+            <textarea id="rawQueryInput" rows="4" placeholder="resident_evil_8:_village -gore rating:e"></textarea>
+          </label>
+        </div>
+
+        <div class="filter-grid">
+          <label class="field compact">
+            <span>Sort</span>
+            <select id="sortSelect">
+              <option value="popular">Popular</option>
+              <option value="new">Newest</option>
+            </select>
+          </label>
+          <label class="field compact">
+            <span>Rating</span>
+            <select id="ratingSelect">
+              <option value="any">Any rating</option>
+              <option value="explicit">Explicit</option>
+              <option value="questionable">Questionable</option>
+              <option value="general">General</option>
+              <option value="safe">Safe</option>
+            </select>
+          </label>
+          <label class="field compact">
+            <span>Score</span>
+            <select id="minScoreSelect">
+              <option value="0">Any score</option>
+              <option value="100">100+</option>
+              <option value="250">250+</option>
+              <option value="500">500+</option>
+              <option value="1000">1000+</option>
+            </select>
+          </label>
+          <label class="field compact">
+            <span>Limit</span>
+            <select id="limitSelect">
+              <option value="24">24</option>
+              <option value="36" selected>36</option>
+              <option value="48">48</option>
+              <option value="60">60</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="adult-check">
+          <input id="adultCheckbox" type="checkbox">
+          <span>I am 18+</span>
         </label>
 
-        <label class="field">
-          <span>Лимит/источник</span>
-          <select id="limitSelect">
-            <option value="20">20</option>
-            <option value="30" selected>30</option>
-            <option value="50">50</option>
-            <option value="75">75</option>
-          </select>
-        </label>
-      </div>
+        <div class="action-row">
+          <button id="searchBtn" class="primary-btn" type="button">Search</button>
+          <button id="clearQueryBtn" class="ghost-btn" type="button">Clear</button>
+          <button id="loadMoreBtn" class="ghost-btn" type="button">Load more</button>
+        </div>
 
-      <label class="field">
-        <span>Score фильтр</span>
-        <select id="minScoreSelect">
-          <option value="0" selected>Любой score</option>
-          <option value="50">50+</option>
-          <option value="100">100+</option>
-          <option value="250">250+</option>
-          <option value="500">500+</option>
-          <option value="1000">1000+</option>
-        </select>
-      </label>
+        <div class="quick-row">
+          <button id="favoritesBtn" class="ghost-btn wide-btn" type="button">Favorites (0)</button>
+          <button id="openDownloadsBtn" class="ghost-btn wide-btn" type="button">Downloads</button>
+          <button id="openSettingsBtn" class="ghost-btn wide-btn" type="button">API / Theme</button>
+        </div>
 
-      <div class="field">
-        <span>Источники</span>
-        <select id="sourceSelect"></select>
-      </div>
+        <div id="resolvedQueryBar" class="resolved-query">Ready to search</div>
+      </section>
 
-      <details class="creds">
-        <summary>API ключи источников</summary>
-        <p id="securityStatus" class="security-note">Security: loading...</p>
-        <label class="field">
-          <span>Rule34 user_id</span>
-          <input id="rule34UserId" type="text" placeholder="user_id">
-        </label>
-        <label class="field">
-          <span>Rule34 api_key</span>
-          <input id="rule34ApiKey" type="password" placeholder="api_key">
-        </label>
-        <label class="field">
-          <span>Gelbooru user_id</span>
-          <input id="gelbooruUserId" type="text" placeholder="user_id">
-        </label>
-        <label class="field">
-          <span>Gelbooru api_key</span>
-          <input id="gelbooruApiKey" type="password" placeholder="api_key">
-        </label>
-        <label class="field">
-          <span>Proxy URL (optional, privacy route)</span>
-          <input id="proxyUrl" type="text" placeholder="http://127.0.0.1:8080">
-        </label>
-        <button id="clearSecureBtn" class="btn ghost" type="button">Очистить secure-хранилище</button>
-      </details>
+      <section class="content panel">
+        <div id="homeView" class="view view-active">
+          <section class="module">
+            <div class="module-head">
+              <div>
+                <span class="eyebrow">Home</span>
+                <h2>Continue searching</h2>
+              </div>
+              <span id="homeStatus" class="module-meta">Awaiting API keys</span>
+            </div>
+            <div id="recentQueries" class="recent-queries"></div>
+          </section>
 
-      <label class="adult-check">
-        <input id="adultCheckbox" type="checkbox">
-        <span>Мне есть 18 лет</span>
-      </label>
+          <section class="module">
+            <div class="module-head">
+              <div>
+                <span class="eyebrow">Trending</span>
+                <h2>Popular tags windows</h2>
+              </div>
+              <div id="trendingTabs" class="tab-row"></div>
+            </div>
+            <div id="trendingSections" class="home-columns"></div>
+          </section>
 
-      <div class="buttons">
-        <button id="searchBtn" class="btn primary">Поиск</button>
-        <button id="loadMoreBtn" class="btn ghost">Загрузить еще</button>
-      </div>
-      <button id="favoritesBtn" class="btn ghost wide-btn" type="button">Favorites (0)</button>
-      <button id="openDownloadsBtn" class="btn ghost wide-btn" type="button">Папка загрузок</button>
+          <section class="module">
+            <div class="module-head">
+              <div>
+                <span class="eyebrow">Featured</span>
+                <h2>Quick launch collections</h2>
+              </div>
+            </div>
+            <div id="featuredSections" class="home-columns"></div>
+          </section>
 
-      <div class="theme-dock">
-        <label class="field">
-          <span>Тема дизайна</span>
-          <select id="themeSelect">
-            <option value="old_neko" selected>Old Neko</option>
-            <option value="retro_blue">Neo 2005 CRT</option>
-          </select>
-        </label>
-      </div>
-    </section>
+          <section class="module">
+            <div class="module-head">
+              <div>
+                <span class="eyebrow">News</span>
+                <h2>Source feed and app notes</h2>
+              </div>
+            </div>
+            <div id="newsList" class="news-list"></div>
+          </section>
+        </div>
 
-    <section class="content glass">
-      <header class="content-head">
-        <strong id="resultCount">0 результатов</strong>
-        <span id="statusText">Ожидание запроса</span>
-      </header>
-      <div id="errorBox" class="error-box hidden"></div>
-      <div id="grid" class="grid"></div>
-      <div id="paginationBar" class="pagination"></div>
-      <div id="scrollSentinel" class="scroll-sentinel"></div>
-    </section>
-  </main>
+        <div id="resultsView" class="view hidden">
+          <div class="view-head">
+            <div>
+              <span class="eyebrow">Results</span>
+              <h2 id="resultCount">0 results</h2>
+            </div>
+            <span id="statusText" class="module-meta">Ready</span>
+          </div>
+          <div id="errorBox" class="error-box hidden"></div>
+          <div id="activeQuery" class="active-query"></div>
+          <div id="grid" class="media-grid"></div>
+          <div id="paginationBar" class="pagination"></div>
+        </div>
+
+        <div id="favoritesView" class="view hidden">
+          <div class="view-head">
+            <div>
+              <span class="eyebrow">Favorites</span>
+              <h2 id="favoritesTitle">Liked media</h2>
+            </div>
+          </div>
+          <div id="favoritesGrid" class="media-grid"></div>
+        </div>
+
+        <div id="settingsView" class="view hidden">
+          <div class="view-head">
+            <div>
+              <span class="eyebrow">Settings</span>
+              <h2>API keys, theme, and privacy route</h2>
+            </div>
+            <span id="securityStatus" class="module-meta">Security: loading...</span>
+          </div>
+
+          <div class="settings-grid">
+            <label class="field"><span>Rule34 user_id</span><input id="rule34UserId" type="text" placeholder="user_id"></label>
+            <label class="field"><span>Rule34 api_key</span><input id="rule34ApiKey" type="password" placeholder="api_key"></label>
+            <label class="field"><span>Gelbooru user_id</span><input id="gelbooruUserId" type="text" placeholder="user_id"></label>
+            <label class="field"><span>Gelbooru api_key</span><input id="gelbooruApiKey" type="password" placeholder="api_key"></label>
+            <label class="field"><span>Proxy URL</span><input id="proxyUrl" type="text" placeholder="http://127.0.0.1:8080"></label>
+            <label class="field"><span>Theme</span><select id="themeSelect"></select></label>
+          </div>
+
+          <div class="action-row">
+            <button id="refreshHomeBtn" class="primary-btn" type="button">Refresh home</button>
+            <button id="clearSecureBtn" class="ghost-btn" type="button">Clear secure store</button>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <nav class="mobile-nav" id="mobileNav">
+      <button class="mobile-nav-btn active" data-view="home">Home</button>
+      <button class="mobile-nav-btn" data-view="search">Search</button>
+      <button class="mobile-nav-btn" data-view="favorites">Favorites</button>
+      <button class="mobile-nav-btn" data-view="settings">Settings</button>
+    </nav>
+  </div>
 
   <dialog id="viewer" class="viewer">
     <div class="viewer-top">
-      <button id="downloadCurrentBtn" class="btn primary">Скачать</button>
-      <button id="likeCurrentBtn" class="btn ghost" type="button">Like Video</button>
-      <button id="prevBtn" class="btn ghost">Назад</button>
-      <button id="nextBtn" class="btn ghost">Вперед</button>
-      <button id="closeBtn" class="btn danger">Закрыть</button>
+      <button id="downloadCurrentBtn" class="primary-btn" type="button">Download</button>
+      <button id="likeCurrentBtn" class="ghost-btn" type="button">Like</button>
+      <button id="prevBtn" class="ghost-btn" type="button">Prev</button>
+      <button id="nextBtn" class="ghost-btn" type="button">Next</button>
+      <button id="closeBtn" class="ghost-btn danger-btn" type="button">Close</button>
     </div>
     <div id="mediaHolder" class="media-holder"></div>
     <div id="metaBox" class="meta-box"></div>
